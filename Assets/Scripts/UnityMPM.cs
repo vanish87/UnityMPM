@@ -5,6 +5,7 @@ using Unity.Mathematics;
 using UnityEngine;
 using UnityTools.Common;
 using UnityTools.Debuging.EditorTool;
+using UnityTools.Math;
 
 namespace UnityMPM
 {
@@ -24,7 +25,8 @@ namespace UnityMPM
         public float2x2 D;
         public float2x2 B;
         public float2x2 C;
-        public float2x2 F;
+        public float2x2 Fe;
+        public float2x2 Fp;
         public float J;
 
         public Matrix<float> weightMatrix;
@@ -36,17 +38,17 @@ namespace UnityMPM
         public Particle()
         {
             this.mass = 1;
-            this.V = 1;
             this.B = 0;
-            this.F = new float2x2(1,0,0,1);
+            this.Fe = new float2x2(1, 0, 0, 1);
+            this.Fp = new float2x2(1, 0, 0, 1);
 
         }
         public void CalculateD(Grid g)
         {
-            var gpos = g.ToGridPos(this.pos);
-            var delta = math.distance(gpos, this.pos);
-            this.D = new float2x2();
-            this.D[0][0] = this.D[1][1] = 0.25f * delta * delta;
+            // var gpos = g.ToGridPos(this.pos);
+            // var delta = math.distance(gpos, this.pos);
+            var delta = g.h;
+            this.D = new float2x2(1,0,0,1) * 0.25f * delta * delta;
         }
 
         public void CalculateWeightMatrix(Grid g)
@@ -86,9 +88,9 @@ namespace UnityMPM
 
         protected float DevN(float x)
         {
-            x = math.abs(x);
-            if (x < 0.5f) return -2 * x;
-            if (x < 1.5f) return -1.5f + x;
+            var absx = math.abs(x);
+            if (absx < 0.5f) return -2 * absx;
+            if (absx < 1.5f) return (x > 0 ? 1f : -1f) - 1.5f + x;
             return 0;
         }
 
@@ -190,6 +192,7 @@ namespace UnityMPM
         public int numOfParticles = 512;
         public int2 gridSize = new int2(32, 32);
         public float h = 1f;
+        public float dt = 0.001f;
         public const float E = 64f;// Young's modulus
         public const float v = 0.4f;// Poisson's ratio
 
@@ -250,6 +253,51 @@ namespace UnityMPM
                 this.particles[i] = p;
             }
 
+            var massSum = new Matrix<float>(this.g.size.x, this.g.size.y);
+            foreach(var p in this.particles)
+            {
+                p.CalculateWeightMatrix(this.g);
+                var gidx = this.g.ToGridIndex(p.pos);
+                for (int gx = -1, mx = 0; gx <= 1; ++gx, ++mx)
+                {
+                    for (int gy = -1, my = 0; gy <= 1; ++gy, ++my)
+                    {
+                        var idx = gidx + new int2(gx, gy);
+                        if (this.g.inGrid(idx))
+                        {
+                            massSum[idx.x, idx.y] += p.mass * p.weightMatrix[mx,my];
+                        }
+                    }
+                }
+            }
+
+            for(var gx = 0; gx < this.g.size.x; ++gx)
+            {
+                for (var gy = 0; gy < this.g.size.y; ++gy)
+                {
+                    massSum[gx, gy] /= this.g.h * this.g.h;
+                }
+            }
+ 
+            foreach (var p in this.particles)
+            {
+                var gidx = this.g.ToGridIndex(p.pos);
+                var density = 0f;
+                for (int gx = -1, mx = 0; gx <= 1; ++gx, ++mx)
+                {
+                    for (int gy = -1, my = 0; gy <= 1; ++gy, ++my)
+                    {
+                        var idx = gidx + new int2(gx, gy);
+                        if (this.g.inGrid(idx))
+                        {
+                            density += massSum[idx.x, idx.y] * p.weightMatrix[mx, my];
+                        }
+                    }
+                }
+
+                p.V = p.mass / density;
+                
+            }
             this.ToGPUBuffer();
         }
 
@@ -285,12 +333,14 @@ namespace UnityMPM
                     for (int gy = -1, my = 0; gy <= 1; ++gy, ++my)
                     {
                         var idx = gidx + new int2(gx, gy);
-                        if (idx.x < 0 || idx.x >= this.g.size.x || idx.y < 0 || idx.y >= this.g.size.y) continue;
-                        var w = p.weightMatrix[mx, my];
-                        var gpos = this.g.ToGridPos(gidx);
-                        var apic = math.mul(math.mul(p.B, math.inverse(p.D)), (gpos - p.pos));
-                        this.g[idx.x, idx.y].mass += p.mass * w;
-                        this.g[idx.x, idx.y].mv += p.mass * w * (p.vel + apic);
+                        if (this.g.inGrid(idx))
+                        {
+                            var w = p.weightMatrix[mx, my];
+                            var gpos = this.g.ToGridPos(idx);
+                            var apic = math.mul(math.mul(p.B, math.inverse(p.D)), (gpos - p.pos));
+                            this.g[idx.x, idx.y].mass += p.mass * w;
+                            this.g[idx.x, idx.y].mv += p.mass * w * (p.vel + apic);
+                        }
                     }
                 }
             }
@@ -304,31 +354,38 @@ namespace UnityMPM
                 for (var gy = 0; gy < this.g.size.y; ++gy)
                 {
                     var c = this.g[gx, gy];
-                    if (c.mass == 0 || (c.mv.x == 0 && c.mv.y == 0)) continue;
-                    c.vel = c.mv / c.mass;
+                    if (c.mass <= 0)
+                    {
+                        c.mass = 0;
+                        c.mv = 0;
+                    }
+                    else
+                    {
+                        c.vel = c.mv / c.mass;
+                    }
                 }
             }
 
             foreach (var p in particles)
             {
                 var gidx = this.g.ToGridIndex(p.pos);
-                var j = math.determinant(p.F);
-                var invtF = math.inverse(math.transpose(p.F));
-                var stress = mu * (p.F - invtF) + lambda * math.log(j) * invtF;
+                var Fe = p.Fe;
+                var j = math.determinant(Fe);
+                var invtF = math.transpose(math.inverse(Fe));
+                var stress = mu * (Fe - invtF) + lambda * math.log(j) * invtF;
                 for (int gx = -1, mx = 0; gx <= 1; ++gx, ++mx)
                 {
                     for (int gy = -1, my = 0; gy <= 1; ++gy, ++my)
                     {
                         var idx = gidx + new int2(gx, gy);
-                        if (idx.x < 0 || idx.x >= this.g.size.x || idx.y < 0 || idx.y >= this.g.size.y) continue;
+                        if (!this.g.inGrid(idx)) continue;
                         if (g[idx.x, idx.y].mass == 0) continue;
 
                         var dw = p.weightGradient[mx, my];
-                        g[idx.x, idx.y].force += -p.V * math.mul(math.mul(stress, math.transpose(p.F)), dw);
+                        g[idx.x, idx.y].force += -p.V * math.mul(math.mul(stress, math.transpose(Fe)), dw);
                     }
                 }
             }
-            var dt = Time.deltaTime;
 
             for (var gx = 0; gx < this.g.size.x; ++gx)
             {
@@ -354,7 +411,7 @@ namespace UnityMPM
                     for (int gy = -1, my = 0; gy <= 1; ++gy, ++my)
                     {
                         var idx = gidx + new int2(gx, gy);
-                        if (idx.x < 0 || idx.x >= this.g.size.x || idx.y < 0 || idx.y >= this.g.size.y) continue;
+                        if (!this.g.inGrid(idx)) continue;
                         if (g[idx.x, idx.y].mass == 0) continue;
 
                         var dw = p.weightGradient[mx, my];
@@ -365,12 +422,32 @@ namespace UnityMPM
                         sum += math.mul(velMat, dwT);
                     }
                 }
-                p.F = (I + dt * sum) * p.F;
+                //first Fn+1 is assumed all Fe
+                var Fn1 = (I + dt * sum) * p.Fe;
+                var Fen1 = math.mul(Fn1, math.inverse(p.Fp));
+                var U = new float2x2();
+                var d = new float2();
+                var V = new float2x2();
+
+                SVD.GetSVD2D(Fen1, out U, out d, out V);
+
+                var thetaC = 0.25f;
+                var thetaS = 0.075f;
+                d[0] = math.clamp(d[0], 1f - thetaC, 1f + thetaS);
+                d[1] = math.clamp(d[1], 1f - thetaC, 1f + thetaS);
+
+                var D = new float2x2(d[0],0,0,d[1]);
+
+                Fen1 = math.mul(math.mul(U, D), math.transpose(V));
+                var Fpn1 = math.mul(math.inverse(Fen1), Fn1); 
+
+                p.Fe = Fen1;
+                p.Fp = Fpn1;
+                
             }
         }
         protected void G2P()
         {
-            var dt = Time.deltaTime;
             foreach(var p in this.particles)
             {
                 p.vel = 0;
@@ -382,7 +459,7 @@ namespace UnityMPM
                     for (int gy = -1, my = 0; gy <= 1; ++gy, ++my)
                     {
                         var idx = gidx + new int2(gx, gy);
-                        if (idx.x < 0 || idx.x >= this.g.size.x || idx.y < 0 || idx.y >= this.g.size.y) continue;
+                        if (!this.g.inGrid(idx)) continue;
                         if (g[idx.x, idx.y].mass == 0) continue;
 
                         var gpos = this.g.ToGridPos(idx);

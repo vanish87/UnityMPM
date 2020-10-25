@@ -345,6 +345,7 @@ MonoBehaviour:
     x: 32
     y: 32
   h: 1
+  dt: 0.01
   mu: 22.857143
   lambda: 91.42858
   render: {fileID: 1478646692}
