@@ -439,8 +439,6 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
                     float2 weighted_velocity = grid[cell_x.x, cell_x.y].v * weight;
 
                     // APIC paper equation 10, constructing inner term for B
-                    var term = math.float2x2(weighted_velocity * dist.x, weighted_velocity * dist.y);
-
                     p.v += weighted_velocity;
                     p.B += Outer(weighted_velocity, dist);
 

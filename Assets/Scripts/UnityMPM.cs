@@ -415,11 +415,9 @@ namespace UnityMPM
                         if (g[idx.x, idx.y].mass == 0) continue;
 
                         var dw = p.weightGradient[mx, my];
-                        var dwT = new float2x2(dw.x, 0, dw.y, 0);
                         var vel = g[idx.x, idx.y].vel;
-                        var velMat = new float2x2(vel.x, vel.y, 0, 0);
 
-                        sum += math.mul(velMat, dwT);
+                        sum += Outer(vel, dw);
                     }
                 }
                 //first Fn+1 is assumed all Fe
@@ -465,12 +463,10 @@ namespace UnityMPM
                         var gpos = this.g.ToGridPos(idx);
 
                         var w = p.weightMatrix[mx, my];
-                        var delta = new float2x2(gpos.x - p.pos.x, gpos.y - p.pos.y, 0, 0);
                         var vel = g[idx.x, idx.y].vel;
-                        var velMat = new float2x2(vel.x, vel.y, 0, 0);
 
                         p.vel += w * vel;
-                        p.B += math.mul(w * velMat, math.transpose(delta));
+                        p.B += Outer(w * vel, gpos-p.pos);
                     }
                 }
 
@@ -479,7 +475,10 @@ namespace UnityMPM
             }
 
         }
-
+        protected float2x2 Outer(float2 u, float2 v)
+        {
+            return new float2x2(u[0] * v[0], u[0] * v[1], u[1] * v[0], u[1] * v[1]);
+        }
 
         protected void OnDrawGizmos()
         {
