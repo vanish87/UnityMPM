@@ -38,7 +38,9 @@ namespace UnityMPM
         public Particle()
         {
             this.mass = 1;
+            // this.vel = new float2(UnityEngine.Random.value, UnityEngine.Random.value);
             this.B = 0;
+            this.D = 0;
             this.Fe = new float2x2(1, 0, 0, 1);
             this.Fp = new float2x2(1, 0, 0, 1);
 
@@ -48,7 +50,7 @@ namespace UnityMPM
             // var gpos = g.ToGridPos(this.pos);
             // var delta = math.distance(gpos, this.pos);
             var delta = g.h;
-            this.D = new float2x2(1,0,0,1) * 0.25f * delta * delta;
+            this.D = new float2x2(1, 0, 0, 1) * 0.25f * delta * delta;
         }
 
         public void CalculateWeightMatrix(Grid g)
@@ -63,7 +65,7 @@ namespace UnityMPM
                 for (int gy = -1, my = 0; gy <= 1; ++gy, ++my)
                 {
                     var id = gidx + new int2(gx, gy);
-                    if(g.inGrid(id))
+                    if (g.inGrid(id))
                     {
                         var gpos = g.ToGridPos(id);
                         var w = invh * (this.pos - gpos);
@@ -159,25 +161,42 @@ namespace UnityMPM
         }
         public void OnDrawGizmos()
         {
-            using (new GizmosScope(new Color(0,1,0,0.1f), Matrix4x4.identity))
-            {
-                var c = new float3(this.center, 0);
-                var s = new float3(this.size, 0) * this.h;
-                Gizmos.DrawWireCube(c, s);
-
-                for(var gi = 0; gi< this.size.x;++gi)
-                for(var gj = 0; gj < this.size.y;++gj)
+            var vel = false;
+            var grid = false;
+            if (grid)
+                using (new GizmosScope(new Color(0, 1, 0, 0.05f), Matrix4x4.identity))
                 {
-                    var cc = new float3(this.ToGridPos(new int2(gi,gj)),0);
-                    var cs = new float3(this.h,this.h,0);
-                    Gizmos.DrawWireCube(cc,cs);
-               }
-            }
+                    var c = new float3(this.center, 0);
+                    var s = new float3(this.size, 0) * this.h;
+                    Gizmos.DrawWireCube(c, s);
+
+                    for (var gi = 0; gi < this.size.x; ++gi)
+                        for (var gj = 0; gj < this.size.y; ++gj)
+                        {
+                            var cc = new float3(this.ToGridPos(new int2(gi, gj)), 0);
+                            var cs = new float3(this.h, this.h, 0);
+                            Gizmos.DrawWireCube(cc, cs);
+                        }
+                }
+
+            if (vel)
+                using (new GizmosScope(Color.red, Matrix4x4.identity))
+                {
+                    for (var gi = 0; gi < this.size.x; ++gi)
+                        for (var gj = 0; gj < this.size.y; ++gj)
+                        {
+                            var c = this.data[gi, gj];
+
+                            var cc = new float3(this.ToGridPos(new int2(gi, gj)), 0);
+                            Gizmos.DrawRay(cc, new float3(c.mv, 0));
+                            Gizmos.DrawSphere(cc, c.mass / 50f);
+                        }
+                }
         }
 
         public void Clear()
         {
-            foreach(var c in this.data)
+            foreach (var c in this.data)
             {
                 c.mass = 0;
                 c.mv = 0;
@@ -219,18 +238,35 @@ namespace UnityMPM
 
         protected void Update()
         {
-            if(Input.GetKey(KeyCode.Space))
+            if (Input.GetKey(KeyCode.Space))
             {
                 this.Step();
                 this.ToGPUBuffer();
             }
         }
+        List<float2> spawn_box(float x, float y, int box_x = 8, int box_y = 8)
+        {
+            const float spacing = 0.25f;
+            var ret = new List<float2>();
+            for (float i = -box_x / 2; i < box_x / 2; i += spacing)
+            {
+                for (float j = -box_y / 2; j < box_y / 2; j += spacing)
+                {
+                    var pos = math.float2(x + i, y + j);
 
+                    ret.Add(pos);
+                }
+            }
+            return ret;
+        }
         protected void Init()
         {
             this.g = new Grid(this.gridSize, new float2(0, 0), this.h);
 
             if (this.gpuBuffer != null) this.gpuBuffer.Release();
+            
+            var pos = this.spawn_box(this.g.center.x, this.g.center.y);
+            this.numOfParticles = pos.Count;
 
             this.particles = new Particle[this.numOfParticles];
 
@@ -243,18 +279,13 @@ namespace UnityMPM
             for (var i = 0; i < this.particles.Length; ++i)
             {
                 var p = new Particle();
-                var pos = this.g.start + new float2(UnityEngine.Random.value, UnityEngine.Random.value) * this.g.size;
-                while (math.distance(pos, this.g.center) > 5)
-                {
-                    pos = this.g.start + new float2(UnityEngine.Random.value, UnityEngine.Random.value) * this.g.size;
-                }
-                p.pos = pos;
+                p.pos = pos[i];
                 p.color = new float4(1, 0, 0, 1);
                 this.particles[i] = p;
             }
 
             var massSum = new Matrix<float>(this.g.size.x, this.g.size.y);
-            foreach(var p in this.particles)
+            foreach (var p in this.particles)
             {
                 p.CalculateWeightMatrix(this.g);
                 var gidx = this.g.ToGridIndex(p.pos);
@@ -265,20 +296,20 @@ namespace UnityMPM
                         var idx = gidx + new int2(gx, gy);
                         if (this.g.inGrid(idx))
                         {
-                            massSum[idx.x, idx.y] += p.mass * p.weightMatrix[mx,my];
+                            massSum[idx.x, idx.y] += p.mass * p.weightMatrix[mx, my];
                         }
                     }
                 }
             }
 
-            for(var gx = 0; gx < this.g.size.x; ++gx)
+            for (var gx = 0; gx < this.g.size.x; ++gx)
             {
                 for (var gy = 0; gy < this.g.size.y; ++gy)
                 {
                     massSum[gx, gy] /= this.g.h * this.g.h;
                 }
             }
- 
+
             foreach (var p in this.particles)
             {
                 var gidx = this.g.ToGridIndex(p.pos);
@@ -296,7 +327,7 @@ namespace UnityMPM
                 }
 
                 p.V = p.mass / density;
-                
+
             }
             this.ToGPUBuffer();
         }
@@ -349,7 +380,7 @@ namespace UnityMPM
 
         protected void UpdateGrid()
         {
-            for(var gx = 0; gx < this.g.size.x; ++gx)
+            for (var gx = 0; gx < this.g.size.x; ++gx)
             {
                 for (var gy = 0; gy < this.g.size.y; ++gy)
                 {
@@ -358,6 +389,7 @@ namespace UnityMPM
                     {
                         c.mass = 0;
                         c.mv = 0;
+                        c.vel = 0;
                     }
                     else
                     {
@@ -392,15 +424,19 @@ namespace UnityMPM
                 for (var gy = 0; gy < this.g.size.y; ++gy)
                 {
                     var c = this.g[gx, gy];
-                    var g = new float2(0,-9.8f);
-                    c.vel += dt * ((c.force + g) / c.mass);
-                    if (gx < 2 || gx > this.g.size.x - 2) c.vel.x = 0;
-                    if (gy < 2 || gy > this.g.size.y - 2) c.vel.y = 0;
+                    if(c.mass > 0)
+                    {
+                        var g = new float2(0, -9.8f);
+                        c.vel += dt * (c.force / c.mass);
+                        c.vel += g * dt;
+                        if (gx < 2 || gx > this.g.size.x - 2) c.vel.x = 0;
+                        if (gy < 2 || gy > this.g.size.y - 2) c.vel.y = 0;
+                    }
                 }
             }
 
 
-            foreach(var p in this.particles)
+            foreach (var p in this.particles)
             {
                 var gidx = this.g.ToGridIndex(p.pos);
                 var sum = new float2x2();
@@ -421,7 +457,7 @@ namespace UnityMPM
                     }
                 }
                 //first Fn+1 is assumed all Fe
-                var Fn1 = (I + dt * sum) * math.mul(p.Fe,p.Fp);
+                var Fn1 = (I + dt * sum) * math.mul(p.Fe, p.Fp);
                 var Fen1 = math.mul(Fn1, math.inverse(p.Fp));
                 var U = new float2x2();
                 var d = new float2();
@@ -434,19 +470,19 @@ namespace UnityMPM
                 d[0] = math.clamp(d[0], 1f - thetaC, 1f + thetaS);
                 d[1] = math.clamp(d[1], 1f - thetaC, 1f + thetaS);
 
-                var D = new float2x2(d[0],0,0,d[1]);
+                var D = new float2x2(d[0], 0, 0, d[1]);
 
                 Fen1 = math.mul(math.mul(U, D), math.transpose(V));
-                var Fpn1 = math.mul(math.inverse(Fen1), Fn1); 
+                var Fpn1 = math.mul(math.inverse(Fen1), Fn1);
 
                 p.Fe = Fen1;
                 p.Fp = Fpn1;
-                
+
             }
         }
         protected void G2P()
         {
-            foreach(var p in this.particles)
+            foreach (var p in this.particles)
             {
                 p.vel = 0;
                 p.B = 0;
@@ -466,7 +502,7 @@ namespace UnityMPM
                         var vel = g[idx.x, idx.y].vel;
 
                         p.vel += w * vel;
-                        p.B += Outer(w * vel, gpos-p.pos);
+                        p.B += Outer(w * vel, gpos - p.pos);
                     }
                 }
 
@@ -483,6 +519,27 @@ namespace UnityMPM
         protected void OnDrawGizmos()
         {
             this.g?.OnDrawGizmos();
+            return;
+
+            var p = this.particles[0];
+            var gidx = this.g.ToGridIndex(p.pos);
+            p.CalculateWeightMatrix(this.g);
+            for (int gx = -1, mx = 0; gx <= 1; ++gx, ++mx)
+            {
+                for (int gy = -1, my = 0; gy <= 1; ++gy, ++my)
+                {
+                    var idx = gidx + new int2(gx, gy);
+                    if (this.g.inGrid(idx))
+                    {
+                        using (new GizmosScope(Color.green, Matrix4x4.identity))
+                        {
+                            var gpos = new float3(this.g.ToGridPos(idx), 0);
+                            Gizmos.DrawWireSphere(gpos, p.weightMatrix[mx, my]);
+                        }
+
+                    }
+                }
+            }
         }
 
     }
