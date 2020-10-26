@@ -216,8 +216,8 @@ namespace UnityMPM
         public int2 gridSize = new int2(32, 32);
         public float h = 1f;
         public float dt = 0.001f;
-        public const float E = 1000;// Young's modulus
-        public const float v = 0.4f;// Poisson's ratio
+        public const float E = 3000;// Young's modulus
+        public const float v = 0.2f;// Poisson's ratio
 
         public const float mu = E / (2f * (1f + v));
         public const float lambda = (E * v) / ((1f + v) * (1f - 2f * v));
