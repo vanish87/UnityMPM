@@ -392,8 +392,8 @@ namespace UnityMPM
                 for (var gy = 0; gy < this.g.size.y; ++gy)
                 {
                     var c = this.g[gx, gy];
-                    c.vel += dt * (c.force / c.mass);
-                    c.vel += dt * new float2(0, -9.8f);
+                    var g = new float2(0,-9.8f);
+                    c.vel += dt * ((c.force + g) / c.mass);
                     if (gx < 2 || gx > this.g.size.x - 2) c.vel.x = 0;
                     if (gy < 2 || gy > this.g.size.y - 2) c.vel.y = 0;
                 }
@@ -421,7 +421,7 @@ namespace UnityMPM
                     }
                 }
                 //first Fn+1 is assumed all Fe
-                var Fn1 = (I + dt * sum) * p.Fe;
+                var Fn1 = (I + dt * sum) * math.mul(p.Fe,p.Fp);
                 var Fen1 = math.mul(Fn1, math.inverse(p.Fp));
                 var U = new float2x2();
                 var d = new float2();

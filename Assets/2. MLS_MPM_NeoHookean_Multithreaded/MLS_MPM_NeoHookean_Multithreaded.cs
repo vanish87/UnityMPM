@@ -12,6 +12,7 @@ using System.Runtime.InteropServices;
 using System.Linq;
 using UnityTools.Common;
 using UnityMPM;
+using UnityTools.Math;
 
 public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
 {
@@ -92,6 +93,7 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
 
     class Cell
     {
+        public float2 force;
         public float2 v; // velocity
         public float mass;
         public float padding; // unused
@@ -270,6 +272,7 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
     {
         this.ClearGrid();
         this.P2G();
+        // this.UpdateForce();
         this.UpdateGrid();
         this.G2P();
     }
@@ -283,6 +286,7 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
             // reset grid scratch-pad entirely
             cell.mass = 0;
             cell.v = 0;
+            cell.force = 0;
         }
     }
 
@@ -375,10 +379,44 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
         }
     }
 
+    public void UpdateForce()
+    {
+        for (int i = 0; i < num_particles; ++i)
+        {
+            var p = ps[i];
+
+            var Fe = p.Fe;
+            var j = math.determinant(Fe);
+            var invtF = math.transpose(math.inverse(Fe));
+            var stress = elastic_mu * (Fe - invtF) + elastic_lambda * math.log(j) * invtF;
+            // quadratic interpolation weights
+            int2 cell_idx = (int2)p.pos;
+
+            var wd = new float2();
+
+            // for all surrounding 9 cells
+            for (int gx = 0; gx < 3; ++gx)
+            {
+                for (int gy = 0; gy < 3; ++gy)
+                {
+                    wd = p.weightGradient[gx,gy];
+
+                    int2 cell_x = new int2(cell_idx.x + gx - 1, cell_idx.y + gy - 1);
+                    float2 cell_dist = (cell_x - p.pos) + 0.5f;
+
+                    // scatter mass and momentum to the grid
+                    var cell_index = new int2((int)cell_x.x , (int)cell_x.y);
+                    Cell cell = grid[cell_index.x, cell_index.y];
+                    cell.force += -p.volume_0 * math.mul(math.mul(stress, math.transpose(Fe)), wd);
+                }
+            }
+        }
+
+    }
 
     public void UpdateGrid()
     {
-        for(var i = 0; i < grid_res;++i)
+        for (var i = 0; i < grid_res; ++i)
         {
             for (var j = 0; j < grid_res; ++j)
             {
@@ -388,7 +426,8 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
                 {
                     // convert momentum to velocity, apply gravity
                     cell.v /= cell.mass;
-                    cell.v += dt * math.float2(0, gravity);
+                    cell.force += math.float2(0, gravity);
+                    cell.v += (cell.force / cell.mass) * dt;
 
                     // 'slip' boundary conditions
                     int x = i;
@@ -397,7 +436,62 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
                     if (y < 2 || y > grid_res - 3) { cell.v.y = 0; }
 
                 }
+                else
+                {
+                    cell.mass = 0;
+                    cell.v = 0;
+                }
             }
+        }
+        
+    }
+
+
+    protected void UpdateGradient()
+    {
+        foreach (var p in this.ps)
+        {
+            int2 cell_idx = (int2)p.pos;
+
+            var sum = new float2x2();
+            var I = new float2x2(1, 0, 0, 1);
+
+            for (int gx = 0; gx < 3; ++gx)
+            {
+                for (int gy = 0; gy < 3; ++gy)
+                {
+                    var weight = p.weight[gx, gy];
+
+                    int2 cell_x = math.int2(cell_idx.x + gx - 1, cell_idx.y + gy - 1);
+
+                    var dw = p.weightGradient[gx, gy];
+                    var vel = grid[cell_x.x, cell_x.y].v;
+
+                    sum += Outer(vel, dw);
+                }
+            }
+            //first Fn+1 is assumed all Fe
+            var Fn1 = (I + dt * sum) * p.Fe;
+            var Fen1 = math.mul(Fn1, math.inverse(p.Fp));
+            var U = new float2x2();
+            var d = new float2();
+            var V = new float2x2();
+
+            SVD.GetSVD2D(Fen1, out U, out d, out V);
+
+            var thetaC = 0.25f;
+            var thetaS = 0.075f;
+            d[0] = math.clamp(d[0], 1f - thetaC, 1f + thetaS);
+            d[1] = math.clamp(d[1], 1f - thetaC, 1f + thetaS);
+
+            var D = new float2x2(d[0], 0, 0, d[1]);
+
+            Fen1 = math.mul(math.mul(U, D), math.transpose(V));
+            var Fpn1 = math.mul(math.inverse(Fen1), Fn1);
+
+            p.Fe = Fen1;
+            p.Fp = Fpn1;
+
         }
     }
 
@@ -425,7 +519,6 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
             // see APIC paper (https://web.archive.org/web/20190427165435/https://www.math.ucla.edu/~jteran/papers/JSSTS15.pdf), page 6
             // below equation 11 for clarification. this is calculating C = B * (D^-1) for APIC equation 8,
             // where B is calculated in the inner loop at (D^-1) = 4 is a constant when using quadratic interpolation functions
-            float2x2 B = 0;
             p.B = 0;
             for (int gx = 0; gx < 3; ++gx)
             {
