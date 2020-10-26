@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityTools.Common;
+using UnityTools.Debuging;
 using UnityTools.Debuging.EditorTool;
 using UnityTools.Math;
 
@@ -27,6 +28,7 @@ namespace UnityMPM
         public float2x2 C;
         public float2x2 Fe;
         public float2x2 Fp;
+        public float2x2 stress;
         public float J;
 
         public Matrix<float> weightMatrix;
@@ -34,6 +36,7 @@ namespace UnityMPM
 
         public float4 color;
 
+        private readonly float2x2 identity = new float2x2(1, 0, 0, 1);
 
         public Particle()
         {
@@ -41,8 +44,9 @@ namespace UnityMPM
             // this.vel = new float2(UnityEngine.Random.value, UnityEngine.Random.value);
             this.B = 0;
             this.D = 0;
-            this.Fe = new float2x2(1, 0, 0, 1);
-            this.Fp = new float2x2(1, 0, 0, 1);
+            this.stress = identity;
+            this.Fe = identity;
+            this.Fp = identity;
 
         }
         public void CalculateD(Grid g)
@@ -212,11 +216,11 @@ namespace UnityMPM
         public int2 gridSize = new int2(32, 32);
         public float h = 1f;
         public float dt = 0.001f;
-        public const float E = 64f;// Young's modulus
-        public const float v = 0.4f;// Poisson's ratio
+        public const float E = 64;// Young's modulus
+        public const float v = 0.04f;// Poisson's ratio
 
-        public float mu = E / (2f * (1f + v));
-        public float lambda = (E * v) / ((1f + v) * (1f - 2f * v));
+        public const float mu = E / (2f * (1f + v));
+        public const float lambda = (E * v) / ((1f + v) * (1f - 2f * v));
 
         public ParticleRender render;
 
@@ -229,6 +233,8 @@ namespace UnityMPM
         protected void OnEnable()
         {
             this.Init();
+            LogTool.Log("mu " + mu, LogLevel.Info);
+            LogTool.Log("lambda " + lambda, LogLevel.Info);
         }
 
         protected void OnDisable()
@@ -401,10 +407,8 @@ namespace UnityMPM
             foreach (var p in particles)
             {
                 var gidx = this.g.ToGridIndex(p.pos);
-                var Fe = p.Fe;
-                var j = math.determinant(Fe);
-                var invtF = math.transpose(math.inverse(Fe));
-                var stress = mu * (Fe - invtF) + lambda * math.log(j) * invtF;
+                var F = math.mul(p.Fe, p.Fp);
+                
                 for (int gx = -1, mx = 0; gx <= 1; ++gx, ++mx)
                 {
                     for (int gy = -1, my = 0; gy <= 1; ++gy, ++my)
@@ -414,7 +418,7 @@ namespace UnityMPM
                         if (g[idx.x, idx.y].mass == 0) continue;
 
                         var dw = p.weightGradient[mx, my];
-                        g[idx.x, idx.y].force += -p.V * math.mul(math.mul(stress, math.transpose(Fe)), dw);
+                        g[idx.x, idx.y].force += -p.V * math.mul(math.mul(p.stress, math.transpose(F)), dw);
                     }
                 }
             }
@@ -457,13 +461,25 @@ namespace UnityMPM
                     }
                 }
                 //first Fn+1 is assumed all Fe
-                var Fn1 = (I + dt * sum) * math.mul(p.Fe, p.Fp);
+                var F = math.mul(p.Fe, p.Fp);
+                var Fn1 = (I + dt * sum) * F;
                 var Fen1 = math.mul(Fn1, math.inverse(p.Fp));
                 var U = new float2x2();
                 var d = new float2();
                 var V = new float2x2();
 
                 SVD.GetSVD2D(Fen1, out U, out d, out V);
+
+                var mu = 0.2f;
+                var lambda = 0.3f;
+
+                var R = math.mul(U, math.transpose(V));
+
+                var Fe = Fen1;
+                var j = math.determinant(Fe);
+                var invtF = math.transpose(math.inverse(Fe));
+                // p.stress = mu * (Fe - invtF) + lambda * math.log(j) * invtF;
+                p.stress = 2f * mu * (Fe - R) + lambda * (j -1f) * j * invtF;
 
                 var thetaC = 0.25f;
                 var thetaS = 0.075f;
