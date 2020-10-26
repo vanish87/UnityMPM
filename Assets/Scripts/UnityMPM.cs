@@ -212,7 +212,7 @@ namespace UnityMPM
         public int2 gridSize = new int2(32, 32);
         public float h = 1f;
         public float dt = 0.001f;
-        public const float E = 1e4f * 0.5f;// Young's modulus
+        public const float E = 0.5e4f;// Young's modulus
         public const float v = 0.2f;// Poisson's ratio
         public const float hardening = 10f;
         public bool snow = true;
@@ -242,11 +242,13 @@ namespace UnityMPM
 
         protected void Update()
         {
-            if (Input.GetKey(KeyCode.Space))
+            // if (Input.GetKey(KeyCode.Space))
+            var c = 0;
+            // while(c++ < 10)
             {
                 this.Step();
-                this.ToGPUBuffer();
             }
+            this.ToGPUBuffer();
         }
         List<float2> spawn_box(float x, float y, int box_x = 8, int box_y = 8)
         {
@@ -426,7 +428,7 @@ namespace UnityMPM
                     var c = this.g[gx, gy];
                     if(c.mass > 0)
                     {
-                        var g = new float2(0, -2.8f);
+                        var g = new float2(0, -9.8f);
                         c.vel += dt * (c.force / c.mass);
                         c.vel += g * dt;
                         if (gx < 2 || gx > this.g.size.x - 2) c.vel.x = 0;
