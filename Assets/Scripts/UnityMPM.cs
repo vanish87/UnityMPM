@@ -24,12 +24,9 @@ namespace UnityMPM
         public float2 pos;
         public float2 vel;
         public float2x2 D;
-        public float2x2 B;
         public float2x2 C;
-        public float2x2 Fe;
-        public float2x2 Fp;
-        public float2x2 stress;
-        public float J;
+        public float2x2 F;
+        public float Jp;
 
         public Matrix<float> weightMatrix;
         public Matrix<float2> weightGradient;
@@ -42,11 +39,10 @@ namespace UnityMPM
         {
             this.mass = 1;
             // this.vel = new float2(UnityEngine.Random.value, UnityEngine.Random.value);
-            this.B = 0;
             this.D = 0;
-            this.stress = identity;
-            this.Fe = identity;
-            this.Fp = identity;
+            this.F = identity;
+            this.C = 0;
+            this.Jp = 1;
 
         }
         public void CalculateD(Grid g)
@@ -216,8 +212,10 @@ namespace UnityMPM
         public int2 gridSize = new int2(32, 32);
         public float h = 1f;
         public float dt = 0.001f;
-        public const float E = 3000;// Young's modulus
+        public const float E = 1e4f * 0.5f;// Young's modulus
         public const float v = 0.2f;// Poisson's ratio
+        public const float hardening = 10f;
+        public bool snow = true;
 
         public const float mu = E / (2f * (1f + v));
         public const float lambda = (E * v) / ((1f + v) * (1f - 2f * v));
@@ -252,7 +250,7 @@ namespace UnityMPM
         }
         List<float2> spawn_box(float x, float y, int box_x = 8, int box_y = 8)
         {
-            const float spacing = 0.25f;
+            const float spacing = 0.2f;
             var ret = new List<float2>();
             for (float i = -box_x / 2; i < box_x / 2; i += spacing)
             {
@@ -331,7 +329,6 @@ namespace UnityMPM
                         }
                     }
                 }
-
                 p.V = p.mass / density;
 
             }
@@ -364,19 +361,23 @@ namespace UnityMPM
                 p.CalculateWeightMatrix(this.g);
                 p.CalculateD(this.g);
 
-                var F = p.stress;
+
+                var e = math.exp(hardening * (1 - p.Jp));
+                var mup = mu * e;
+                var lambdap = lambda * e;
+
+                var F = p.F;
                 var j = math.determinant(F);
-                var volume = p.V * j;
 
 
-                // var mu = 2000f;
-                // var lambda = 0.4f;
+                var R = new float2x2();
+                var S = new float2x2();
+                SVD.GetPolarDecomposition2D(F, out R, out S);
 
-                var invtF = math.transpose(math.inverse(F));
-                var P = mu * (F - invtF) + lambda * math.log(j) * invtF;
-                var stress = (1f / j) * math.mul(P, math.transpose(F));
-                var term = -volume * 4 * stress * dt;
-
+                var Dinv = new float2x2(4, 0, 0, 4);
+                var PF = math.mul((2 * mup * (F - R)), math.transpose(F)) + lambda * (j - 1f) * j;
+                var stress = -(dt * p.V) * math.mul(Dinv, PF);
+                var apic = stress + p.mass * p.C;
 
                 var gidx = this.g.ToGridIndex(p.pos);
                 for (int gx = -1, mx = 0; gx <= 1; ++gx, ++mx)
@@ -388,10 +389,8 @@ namespace UnityMPM
                         {
                             var w = p.weightMatrix[mx, my];
                             var gpos = this.g.ToGridPos(idx);
-                            var apic = math.mul(math.mul(p.B, math.inverse(p.D)), (gpos - p.pos));
-                            this.g[idx.x, idx.y].mass += p.mass * w;
-                            this.g[idx.x, idx.y].mv += p.mass * w * (p.vel + apic);
-                            this.g[idx.x, idx.y].mv += math.mul(term * w, (gpos - p.pos));
+                            this.g[idx.x, idx.y].mass += w * p.mass;
+                            this.g[idx.x, idx.y].mv += w * (p.vel * p.mass + math.mul(apic, (gpos-p.pos)));
                         }
                     }
                 }
@@ -443,7 +442,7 @@ namespace UnityMPM
             foreach (var p in this.particles)
             {
                 p.vel = 0;
-                p.B = 0;
+                p.C = 0;
 
                 var gidx = this.g.ToGridIndex(p.pos);
                 for (int gx = -1, mx = 0; gx <= 1; ++gx, ++mx)
@@ -460,7 +459,7 @@ namespace UnityMPM
                         var vel = g[idx.x, idx.y].vel;
 
                         p.vel += w * vel;
-                        p.B += Outer(w * vel, gpos - p.pos);
+                        p.C += 4 * Outer(w * vel, gpos - p.pos);
                     }
                 }
 
@@ -468,9 +467,22 @@ namespace UnityMPM
                 p.pos = math.clamp(p.pos, this.g.start, this.g.start + new float2(this.g.size) * this.g.h);
 
 
-                var F = new float2x2(1,0,0,1);
-                F+= dt * p.B * 4;
-                p.stress = math.mul(F, p.stress);
+                var F = math.mul((new float2x2(1, 0, 0, 1) + dt * p.C), p.F);
+                var U = new float2x2();
+                var d = new float2();
+                var V = new float2x2();
+                SVD.GetSVD2D(F, out U, out d, out V);
+
+                if (snow) d = math.clamp(d, new float2(1f - 1.9e-2f), new float2(1f + 7.5e-3f));
+                var D = new float2x2(d[0], 0, 0, d[1]);
+
+                var oj = math.determinant(F);
+                F =  math.mul(math.mul(U, D), math.transpose(V));
+
+                var jpNew = math.clamp(p.Jp * oj / math.determinant(F), 0.6f, 20f);
+
+                p.Jp = jpNew;
+                p.F = F;
             }
 
         }
