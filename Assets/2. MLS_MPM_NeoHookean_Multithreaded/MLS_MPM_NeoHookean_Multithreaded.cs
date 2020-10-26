@@ -19,7 +19,6 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
     {
         public float2 pos; // position
         public float2 v; // velocity
-        public float2x2 C; // affine momentum matrix
         public float mass;
         public float volume_0; // initial volume
 
@@ -181,7 +180,6 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
             Particle p = new Particle();
             p.pos = temp_positions[i];
             p.v = 0;
-            p.C = 0;
             p.mass = 1.0f;
             p.weight = new Matrix<float>(3,3);
 
@@ -342,7 +340,6 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
 
                     int2 cell_x = new int2(cell_idx.x + gx - 1, cell_idx.y + gy - 1);
                     float2 cell_dist = (cell_x - p.pos) + 0.5f;
-                    float2 Q = math.mul(p.C, cell_dist);
 
                     // scatter mass and momentum to the grid
                     var cell_index = new int2((int)cell_x.x , (int)cell_x.y);
@@ -405,6 +402,12 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
     }
 
 
+    protected float2x2 Outer(float2 u, float2 v)
+    {
+        return new float2x2(u[0]*v[0], u[0]*v[1] , u[1]*v[0], u[1]*v[1] );
+
+    }
+
     public void G2P()
     {
         foreach (var i in Enumerable.Range(0, num_particles))
@@ -438,17 +441,11 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
                     // APIC paper equation 10, constructing inner term for B
                     var term = math.float2x2(weighted_velocity * dist.x, weighted_velocity * dist.y);
 
-                    B += term;
-
                     p.v += weighted_velocity;
-                    var delta = new float2x2(dist.x, dist.y, 0, 0);
-                    var velMat = new float2x2(weighted_velocity.x, weighted_velocity.y, 0, 0);
-
-                    p.B += math.mul(velMat, math.transpose(delta));
+                    p.B += Outer(weighted_velocity, dist);
 
                 }
             }
-            p.C = B * 4;
 
             // advect particles
             p.pos += p.v * dt;
@@ -475,7 +472,7 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
                 1, 0,
                 0, 1
             );
-            Fp_new += dt * p.C;
+            Fp_new += dt * p.B * 4;
             p.Fe = math.mul(Fp_new, p.Fe);
 
             ps[i] = p;
