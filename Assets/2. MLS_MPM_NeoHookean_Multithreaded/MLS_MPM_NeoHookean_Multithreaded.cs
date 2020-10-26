@@ -23,6 +23,8 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
         public float mass;
         public float volume_0; // initial volume
 
+        public float2x2 B;
+        public float2x2 D;
         public float2x2 Fe;
         public float2x2 Fp;
 
@@ -59,7 +61,13 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
                 }
             }
         }
-
+        public void CalculateD()
+        {
+            // var gpos = g.ToGridPos(this.pos);
+            // var delta = math.distance(gpos, this.pos);
+            var delta = 1;
+            this.D = new float2x2(1,0,0,1) * 0.25f * delta * delta;
+        }
         private float2 ToGridPos(int2 id)
         {
             return id + new float2(0.5f);
@@ -114,8 +122,6 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
 
 
     // deformation gradient. stored as a separate array to use same rendering code for all demos, but feel free to store this field in the particle struct instead
-
-    float2[] weights = new float2[3];
 
     int num_particles;
     List<float2> temp_positions;
@@ -206,13 +212,10 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
         for (int i = 0; i < num_particles; ++i)
         {
             var p = ps[i];
+            p.CalculateWeightMatrix();
 
             // quadratic interpolation weights
             float2 cell_idx = math.floor(p.pos);
-            float2 cell_diff = (p.pos - cell_idx) - 0.5f;
-            weights[0] = 0.5f * math.pow(0.5f - cell_diff, 2);
-            weights[1] = 0.75f - math.pow(cell_diff, 2);
-            weights[2] = 0.5f * math.pow(0.5f + cell_diff, 2);
 
             float density = 0.0f;
             // iterate over neighbouring 3x3 cells
@@ -220,7 +223,7 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
             {
                 for (int gy = 0; gy < 3; ++gy)
                 {
-                    float weight = weights[gx].x * weights[gy].y;
+                    float weight = p.weight[gx][gy];
 
                     // map 2D to 1D index in grid
                     var cell_index = new int2((int)cell_idx.x + (gx - 1) , (int)cell_idx.y + gy - 1);
@@ -294,6 +297,7 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
         {
             var p = ps[i];
             p.CalculateWeightMatrix();
+            p.CalculateD();
 
             float2x2 stress = 0;
 
@@ -328,18 +332,13 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
 
             // quadratic interpolation weights
             int2 cell_idx = (int2)p.pos;
-            float2 cell_diff = (p.pos - cell_idx) - 0.5f;
-            weights[0] = 0.5f * math.pow(0.5f - cell_diff, 2);
-            weights[1] = 0.75f - math.pow(cell_diff, 2);
-            weights[2] = 0.5f * math.pow(0.5f + cell_diff, 2);
 
             // for all surrounding 9 cells
             for (int gx = 0; gx < 3; ++gx)
             {
                 for (int gy = 0; gy < 3; ++gy)
                 {
-                    float weight = weights[gx].x * weights[gy].y;
-                    weight = p.weight[gx,gy];
+                    var weight = p.weight[gx,gy];
 
                     int2 cell_x = new int2(cell_idx.x + gx - 1, cell_idx.y + gy - 1);
                     float2 cell_dist = (cell_x - p.pos) + 0.5f;
@@ -361,6 +360,8 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
                     float2 momentum = math.mul(eq_16_term_0 * weight, cell_dist);
                     cell.v += momentum;
 
+                    
+
                     // total update on cell.v is now:
                     // weight * (dt * M^-1 * p.volume * p.stress + p.mass * p.C)
                     // this is the fused momentum + force from MLS-MPM. however, instead of our stress being derived from the energy density,
@@ -370,8 +371,6 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
 
                     // note: currently "cell.v" refers to MOMENTUM, not velocity!
                     // this gets converted in the UpdateGrid step below.
-
-                    grid[cell_index.x, cell_index.y] = cell;
                 }
             }
         }
@@ -416,12 +415,6 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
 
             // quadratic interpolation weights
             int2 cell_idx = (int2)p.pos;
-            float2 cell_diff = (p.pos - cell_idx) - 0.5f;
-            var weights = new float2[] {
-                0.5f * math.pow(0.5f - cell_diff, 2),
-                0.75f - math.pow(cell_diff, 2),
-                0.5f * math.pow(0.5f + cell_diff, 2)
-            };
 
             // constructing affine per-particle momentum matrix from APIC / MLS-MPM.
             // see APIC paper (https://web.archive.org/web/20190427165435/https://www.math.ucla.edu/~jteran/papers/JSSTS15.pdf), page 6
@@ -432,8 +425,7 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
             {
                 for (int gy = 0; gy < 3; ++gy)
                 {
-                    float weight = weights[gx].x * weights[gy].y;
-                    weight = p.weight[gx,gy];
+                    var weight = p.weight[gx,gy];
 
                     int2 cell_x = math.int2(cell_idx.x + gx - 1, cell_idx.y + gy - 1);
 
