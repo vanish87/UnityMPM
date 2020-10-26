@@ -349,18 +349,20 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
                     Cell cell = grid[cell_index.x, cell_index.y];
 
                     // MPM course, equation 172
-                    float weighted_mass = weight * p.mass;
-                    cell.mass += weighted_mass;
+                    // float weighted_mass = weight * p.mass;
+                    // cell.mass += weighted_mass;
 
                     // APIC P2G momentum contribution
-                    cell.v += weighted_mass * (p.v + Q);
+                    // cell.v += weighted_mass * (p.v + Q);
 
                     // fused force/momentum update from MLS-MPM
                     // see MLS-MPM paper, equation listed after eqn. 28
                     float2 momentum = math.mul(eq_16_term_0 * weight, cell_dist);
                     cell.v += momentum;
 
-                    
+                    var apic = math.mul(math.mul(p.B, math.inverse(p.D)), cell_dist);
+                    cell.mass += p.mass * weight;
+                    cell.v += p.mass * weight * (p.v + apic);
 
                     // total update on cell.v is now:
                     // weight * (dt * M^-1 * p.volume * p.stress + p.mass * p.C)
@@ -421,11 +423,12 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
             // below equation 11 for clarification. this is calculating C = B * (D^-1) for APIC equation 8,
             // where B is calculated in the inner loop at (D^-1) = 4 is a constant when using quadratic interpolation functions
             float2x2 B = 0;
+            p.B = 0;
             for (int gx = 0; gx < 3; ++gx)
             {
                 for (int gy = 0; gy < 3; ++gy)
                 {
-                    var weight = p.weight[gx,gy];
+                    var weight = p.weight[gx, gy];
 
                     int2 cell_x = math.int2(cell_idx.x + gx - 1, cell_idx.y + gy - 1);
 
@@ -438,6 +441,11 @@ public class MLS_MPM_NeoHookean_Multithreaded : MonoBehaviour
                     B += term;
 
                     p.v += weighted_velocity;
+                    var delta = new float2x2(dist.x, dist.y, 0, 0);
+                    var velMat = new float2x2(weighted_velocity.x, weighted_velocity.y, 0, 0);
+
+                    p.B += math.mul(velMat, math.transpose(delta));
+
                 }
             }
             p.C = B * 4;
