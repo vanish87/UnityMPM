@@ -406,7 +406,7 @@ MonoBehaviour:
     x: 32
     y: 32
   h: 1
-  dt: 0.03
+  dt: 0.01
   snow: 0
   render: {fileID: 1478646692}
 --- !u!114 &1478646692

@@ -212,13 +212,13 @@ namespace UnityMPM
         public int2 gridSize = new int2(32, 32);
         public float h = 1f;
         public float dt = 0.001f;
-        public const float E = 0.5e4f;// Young's modulus
-        public const float v = 0.2f;// Poisson's ratio
-        public const float hardening = 10f;
+        public float E = 0.5e4f;// Young's modulus
+        public float v = 0.2f;// Poisson's ratio
+        public float hardening = 10f;
         public bool snow = true;
 
-        public const float mu = E / (2f * (1f + v));
-        public const float lambda = (E * v) / ((1f + v) * (1f - 2f * v));
+        public float mu;
+        public float lambda;
 
         public ParticleRender render;
 
@@ -267,6 +267,8 @@ namespace UnityMPM
         }
         protected void Init()
         {
+            this.mu = E / (2f * (1f + v));
+            this.lambda = (E * v) / ((1f + v) * (1f - 2f * v));
             this.g = new Grid(this.gridSize, new float2(0, 0), this.h);
 
             if (this.gpuBuffer != null) this.gpuBuffer.Release();
@@ -364,7 +366,7 @@ namespace UnityMPM
                 p.CalculateD(this.g);
 
 
-                var e = math.exp(hardening * (1 - p.Jp));
+                var e = snow ? math.exp(hardening * (1 - p.Jp)) : 1f;//snow
                 var mup = mu * e;
                 var lambdap = lambda * e;
 
@@ -376,9 +378,14 @@ namespace UnityMPM
                 var S = new float2x2();
                 SVD.GetPolarDecomposition2D(F, out R, out S);
 
-                var Dinv = new float2x2(4, 0, 0, 4);
-                var PF = math.mul((2 * mup * (F - R)), math.transpose(F)) + lambda * (j - 1f) * j;
+                var Dinv = new float2x2(4, 0, 0, 4);// Mp-1 in Eq29
+                var FinvT = math.transpose(math.inverse(F));
+                var PF = math.mul((2 * mup * (F - R)), math.transpose(F)) + lambda * (j - 1f) * j ;
+
+                // PF = mu * (F - FinvT) + lambda * math.log(j) * FinvT;
+
                 var stress = -(dt * p.V) * math.mul(Dinv, PF);
+                
                 var apic = stress + p.mass * p.C;
 
                 var gidx = this.g.ToGridIndex(p.pos);
@@ -415,20 +422,8 @@ namespace UnityMPM
                     }
                     else
                     {
-                        c.vel = c.mv / c.mass;
-                    }
-                }
-            }
-
-
-            for (var gx = 0; gx < this.g.size.x; ++gx)
-            {
-                for (var gy = 0; gy < this.g.size.y; ++gy)
-                {
-                    var c = this.g[gx, gy];
-                    if(c.mass > 0)
-                    {
                         var g = new float2(0, -9.8f);
+                        c.vel = c.mv / c.mass;
                         c.vel += dt * (c.force / c.mass);
                         c.vel += g * dt;
                         if (gx < 2 || gx > this.g.size.x - 2) c.vel.x = 0;
@@ -437,7 +432,7 @@ namespace UnityMPM
                 }
             }
 
-            
+
         }
         protected void G2P()
         {
@@ -470,20 +465,23 @@ namespace UnityMPM
 
 
                 var F = math.mul((new float2x2(1, 0, 0, 1) + dt * p.C), p.F);
-                var U = new float2x2();
-                var d = new float2();
-                var V = new float2x2();
-                SVD.GetSVD2D(F, out U, out d, out V);
+                if(snow)
+                {
+                    var U = new float2x2();
+                    var d = new float2();
+                    var V = new float2x2();
+                    SVD.GetSVD2D(F, out U, out d, out V);
 
-                if (snow) d = math.clamp(d, new float2(1f - 1.9e-2f), new float2(1f + 7.5e-3f));
-                var D = new float2x2(d[0], 0, 0, d[1]);
+                    d = math.clamp(d, new float2(1f - 1.9e-2f), new float2(1f + 7.5e-3f));
+                    var D = new float2x2(d[0], 0, 0, d[1]);
 
-                var oj = math.determinant(F);
-                F =  math.mul(math.mul(U, D), math.transpose(V));
+                    var oj = math.determinant(F);
+                    F = math.mul(math.mul(U, D), math.transpose(V));
 
-                var jpNew = math.clamp(p.Jp * oj / math.determinant(F), 0.6f, 20f);
+                    var jpNew = math.clamp(p.Jp * oj / math.determinant(F), 0.6f, 20f);
 
-                p.Jp = jpNew;
+                    p.Jp = jpNew;
+                }
                 p.F = F;
             }
 
