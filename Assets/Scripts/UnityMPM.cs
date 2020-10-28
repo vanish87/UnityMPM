@@ -26,7 +26,7 @@ namespace UnityMPM
         public float2x2 D;
         public float2x2 B;
         public float2x2 Fe;
-        public float2x2 Fp;
+        public float Jp;
 
         public Matrix<float> weightMatrix;
         public Matrix<float2> weightGradient;
@@ -42,7 +42,7 @@ namespace UnityMPM
             this.D = 0;
             this.B = 0;
             this.Fe = identity;
-            this.Fp = identity;
+            this.Jp = 1;
         }
         public void CalculateD(Grid g)
         {
@@ -91,7 +91,7 @@ namespace UnityMPM
         {
             var absx = math.abs(x);
             if (absx < 0.5f) return -2 * x;
-            if (absx < 1.5f) return x > 0 ? absx - 1.5f : math.abs(absx - 1.5f);
+            if (absx < 1.5f) return x > 0 ? absx - 1.5f : -(absx - 1.5f);
             return 0;
         }
 
@@ -219,6 +219,7 @@ namespace UnityMPM
 
         public float mu;
         public float lambda;
+        public bool debug;
 
         public ParticleRender render;
 
@@ -242,14 +243,15 @@ namespace UnityMPM
 
         protected void Update()
         {
-            var c = 0;
+            var c = Time.deltaTime;
             // if (Input.GetKey(KeyCode.Space))
-            // while(c++ < 10)
+            // while (c > 0)
             {
                 this.Step();
             }
             this.ToGPUBuffer();
         }
+
         List<float2> spawn_box(float x, float y, int box_x = 8, int box_y = 8)
         {
             var ret = new List<float2>();
@@ -504,8 +506,12 @@ namespace UnityMPM
                         var S = new float2x2();
                         SVD.GetPolarDecomposition2D(F, out R, out S);
 
+                        var e = snow ? math.exp(hardening * (1 - p.Jp)) : 1f;//snow
+                        var mup = mu * e;
+                        var lambdap = lambda * e;
+
                         var FinvT = math.transpose(math.inverse(F));
-                        var PF = (2f * mu * (F - R)) + lambda * (j - 1f) * j * FinvT;
+                        var PF = (2f * mup * (F - R)) + lambdap * (j - 1f) * j * FinvT;
 
                         // PF = mu * (F - FinvT) + lambda * math.log(j) * FinvT;
                         // stress = -(dt * p.V) * math.mul(math.inverse(p.D), PF);
@@ -573,8 +579,26 @@ namespace UnityMPM
                 p.pos = math.clamp(p.pos, this.g.start, this.g.start + new float2(this.g.size) * this.g.h);
 
 
-                var F = math.mul(p.Fe, p.Fp);
+                var F = p.Fe;
                 F = math.mul((new float2x2(1, 0, 0, 1) + dt * sum), F);
+
+                if(snow)
+                {
+                    var U = new float2x2();
+                    var d = new float2();
+                    var V = new float2x2();
+                    SVD.GetSVD2D(F, out U, out d, out V);
+
+                    d = math.clamp(d, new float2(1f - 2.5e-2f), new float2(1f + 7.5e-3f));
+                    var D = new float2x2(d[0], 0, 0, d[1]);
+
+                    var oj = math.determinant(F);
+                    F = math.mul(math.mul(U, D), math.transpose(V));
+
+                    var jpNew = math.clamp(p.Jp * oj / math.determinant(F), 0.6f, 20f);
+
+                    p.Jp = jpNew;
+                }
                 p.Fe = F;
 
 
@@ -641,8 +665,8 @@ namespace UnityMPM
 
         protected void OnDrawGizmos()
         {
+            if(!this.debug) return;
             this.g?.OnDrawGizmos();
-            return;
 
             var p = this.particles[0];
             var gidx = this.g.ToGridIndex(p.pos);
