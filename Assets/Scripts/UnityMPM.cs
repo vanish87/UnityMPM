@@ -19,6 +19,13 @@ namespace UnityMPM
     }
     public class Particle
     {
+        public enum Type
+        {
+            Elastic,
+            Snow,
+            Liquid,
+        }
+        public Type type;
         public float mass;
         public float V;
         public float2 pos;
@@ -215,7 +222,6 @@ namespace UnityMPM
         public float v = 0.2f;// Poisson's ratio
         public float spacing = 0.2f;
         public float hardening = 10f;
-        public bool snow = true;
 
         public float mu;
         public float lambda;
@@ -243,9 +249,9 @@ namespace UnityMPM
 
         protected void Update()
         {
-            var c = Time.deltaTime;
+            var c = 0;
             // if (Input.GetKey(KeyCode.Space))
-            // while (c > 0)
+            while (c++ < 3)
             {
                 this.Step();
             }
@@ -273,8 +279,11 @@ namespace UnityMPM
             this.g = new Grid(this.gridSize, new float2(0, 0), this.h);
 
             if (this.gpuBuffer != null) this.gpuBuffer.Release();
-            
-            var pos = this.spawn_box(this.g.center.x, this.g.center.y);
+
+            var pos = this.spawn_box(this.g.center.x, this.g.center.y - 20, 10,10);
+            var snow = this.spawn_box(this.g.center.x + 3, this.g.center.y + 4, 5, 5);
+
+            pos.AddRange(snow);
             this.numOfParticles = pos.Count;
 
             this.particles = new Particle[this.numOfParticles];
@@ -290,6 +299,10 @@ namespace UnityMPM
                 var p = new Particle();
                 p.pos = pos[i];
                 p.color = new float4(1, 0, 0, 1);
+
+                if (i < pos.Count - snow.Count) p.type = Particle.Type.Liquid;
+                else p.type = Particle.Type.Snow;
+
                 this.particles[i] = p;
             }
 
@@ -506,9 +519,15 @@ namespace UnityMPM
                         var S = new float2x2();
                         SVD.GetPolarDecomposition2D(F, out R, out S);
 
-                        var e = snow ? math.exp(hardening * (1 - p.Jp)) : 1f;//snow
+                        var e = p.type == Particle.Type.Snow ? math.exp(hardening * (1 - p.Jp)) : 1f;//snow
                         var mup = mu * e;
                         var lambdap = lambda * e;
+
+                        if(p.type == Particle.Type.Liquid)
+                        {
+                            mup = 0;
+                            p.Fe = new float2x2(j,0,0,1);
+                        }
 
                         var FinvT = math.transpose(math.inverse(F));
                         var PF = (2f * mup * (F - R)) + lambdap * (j - 1f) * j * FinvT;
@@ -582,7 +601,7 @@ namespace UnityMPM
                 var F = p.Fe;
                 F = math.mul((new float2x2(1, 0, 0, 1) + dt * sum), F);
 
-                if(snow)
+                if(p.type == Particle.Type.Snow)
                 {
                     var U = new float2x2();
                     var d = new float2();

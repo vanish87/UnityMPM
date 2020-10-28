@@ -342,15 +342,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   numOfParticles: 1024
   gridSize:
-    x: 32
-    y: 32
+    x: 64
+    y: 64
   h: 1
-  dt: 0.02
-  E: 14000
+  dt: 0.01
+  E: 140000
   v: 0.2
   spacing: 0.2
   hardening: 10
-  snow: 1
   mu: 0
   lambda: 0
   debug: 0
