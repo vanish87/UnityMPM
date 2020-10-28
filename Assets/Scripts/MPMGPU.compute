@@ -1,0 +1,106 @@
+﻿#pragma kernel Init
+#pragma kernel P2G
+#pragma kernel UpdateGrid
+#pragma kernel G2P
+
+#define SIMULATION_BLOCK_SIZE 256
+
+struct Particle
+{
+    float mass;
+    float volume;
+    float4 color;
+
+    float3 pos;
+    float3 vel;
+
+    float2x2 B;
+    float2x2 D;
+
+    float2x2 Fe;
+    float2x2 Fp;
+
+    float2x2 Weight;
+
+    float2 dw00; float2 dw01;
+    float2 dw10; float2 dw11;
+};
+
+struct Cell
+{
+    float mass;
+    float3 mv;
+    float3 vel;
+    float3 force;
+};
+
+
+cbuffer cb
+{
+    float spacing;
+    int2 gridSize;
+    int particleNum;
+};
+
+RWStructuredBuffer<Particle> particles;
+RWStructuredBuffer<Cell> grid;
+
+int ToIndex(int2 cell)
+{
+    return cell.x * gridSize.x + cell.y;
+}
+
+[numthreads(1,1,1)]
+void Init (uint3 id : SV_DispatchThreadID)
+{
+    for(int i = 0; i < particleNum; ++i)
+    {
+
+    }
+    
+}
+groupshared struct {float3 pos; float mass; float3 mv; } particle_data[SIMULATION_BLOCK_SIZE];
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void P2G ( uint3 Gid   : SV_GroupID,
+		   uint  GI    : SV_GroupIndex)
+{
+    const uint G_ID = Gid.x;
+    Cell c = grid[G_ID];
+    c.mass = 0;
+    c.mv = 0;
+    c.force = 0;
+    c.vel = 0;
+
+	[loop]
+	for (uint N_block_ID = 0; N_block_ID < (uint)particleNum; N_block_ID += SIMULATION_BLOCK_SIZE)
+	{
+		particle_data[GI].pos = particles[N_block_ID + GI].pos;
+		particle_data[GI].mass = particles[N_block_ID + GI].mass;
+
+		GroupMemoryBarrierWithGroupSync();
+
+		//[unroll]
+		for (uint N_tile_ID = 0; N_tile_ID < SIMULATION_BLOCK_SIZE; N_tile_ID++)
+		{
+			float3 N_vel = particle_data[N_tile_ID].pos;
+			float N_mass = particle_data[N_tile_ID].mass;
+
+            c.mass += N_mass;
+            c.mv += N_vel * N_mass;
+        }
+    }
+
+    grid[G_ID] = c;
+}
+[numthreads(8,8,1)]
+void UpdateGrid (uint3 id : SV_DispatchThreadID)
+{
+    // TODO: insert actual code here!
+
+}
+[numthreads(8,8,1)]
+void G2P (uint3 id : SV_DispatchThreadID)
+{
+    // TODO: insert actual code here!
+
+}
