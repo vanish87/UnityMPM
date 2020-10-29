@@ -5,6 +5,9 @@
 
 #define SIMULATION_BLOCK_SIZE 256
 
+#include "Common.cginc"
+#include "Math.cginc"
+
 static const float dt = 0.05;
 
 struct Particle
@@ -61,7 +64,7 @@ bool IsValid(int2 index)
     return 0 <= index.x && index.x < gsx && 0 <= index.y && index.y < gsy;
 }
 
-void SetWD(Particle p, int x, int y, float2 value)
+void SetWD(in Particle p, int x, int y, float2 value)
 {
     if(x == 0)
     {
@@ -193,6 +196,40 @@ void P2G ( uint3 Gid : SV_DispatchThreadID)
                     float w = p.Weight[mx][my];
                     c.mass += p.mass * w;
                     c.mv += w * p.mass * (p.vel + mul(apic, (gpos-p.pos)));
+
+
+
+                    float2 wd = ToWD(p, mx, my);
+                    float2x2 F = p.Fe;
+                    float j = determinant(F);
+                    float volume = p.volume;
+
+                    float2x2 R = 0;
+                    float2x2 S = 0;
+                    GetPolarDecomposition2D(F, R, S);
+
+                    // float e = p.type == Particle.Type.Snow ? math.exp(hardening * (1 - p.Jp)) : 1f;//snow
+                    float e = 1;
+                    float mu = 30;
+                    float lambda = 20;
+                    float mup = mu * e;
+                    float lambdap = lambda * e;
+
+                    // if(p.type == Particle.Type.Liquid)
+                    // {
+                    //     mup = 0;
+                    //     p.Fe = new float2x2(j,0,0,1);
+                    // }
+
+                    // var FinvT = math.transpose(math.inverse(F));
+                    // var PF = (2f * mup * (F - R)) + lambdap * (j - 1f) * j * FinvT;
+
+                    // PF = mu * (F - FinvT) + lambda * math.log(j) * FinvT;
+                    // stress = -(dt * p.V) * math.mul(math.inverse(p.D), PF);
+                    float2x2 PF = mul((2.0f * mup * (F - R)), transpose(F)) + lambdap * (j - 1.0f) * j;
+
+                    float2x2 stress = 1.0f / j * mul(PF, transpose(F));
+                    c.force += -volume * mul(stress, wd);
                 }
             }
         }
@@ -264,6 +301,12 @@ void G2P (uint3 id : SV_DispatchThreadID)
 
     p.pos += dt * p.vel;
     p.pos = clamp(p.pos, 0, float2(gsx,gsy));
+
+    float2x2 F = p.Fe;
+    F = mul((float2x2(1, 0, 0, 1) + dt * sum), F);
+
+
+    p.Fe = F;
 
     particles[id.x] = p;
 }
