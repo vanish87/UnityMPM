@@ -51,7 +51,7 @@ namespace UnityMPM
             this.Fe = identity;
             this.Jp = 1;
         }
-        public void CalculateD(Grid g)
+        public void CalculateD(GridOld g)
         {
             // var gpos = g.ToGridPos(this.pos);
             // var delta = math.distance(gpos, this.pos);
@@ -59,7 +59,7 @@ namespace UnityMPM
             this.D = new float2x2(1, 0, 0, 1) * 0.25f * delta * delta;
         }
 
-        public void CalculateWeightMatrix(Grid g)
+        public void CalculateWeightMatrix(GridOld g)
         {
             this.weightMatrix = new Matrix<float>(3, 3);
             this.weightGradient = new Matrix<float2>(3, 3);
@@ -104,7 +104,7 @@ namespace UnityMPM
 
 
     }
-    public class Grid
+    public class GridOld
     {
         public class Cell
         {
@@ -115,7 +115,7 @@ namespace UnityMPM
 
         }
 
-        public int2 size;//dimesion
+        public int2 dimension;//dimesion
         public float2 start;//left bottom corner
         public float2 center;
         public float h;//cell size/grid spacing
@@ -128,17 +128,17 @@ namespace UnityMPM
 
         private Matrix<Cell> data;
 
-        public Grid(int2 size, float2 start, float h)
+        public GridOld(int2 dimension, float2 start, float h)
         {
-            this.size = size;
+            this.dimension = dimension;
             this.start = start;
             this.h = h;
-            this.center = this.start + new float2(this.size) * this.h * 0.5f;
+            this.center = this.start + new float2(this.dimension) * this.h * 0.5f;
 
-            this.data = new Matrix<Cell>(this.size.x, this.size.y);
-            for (var i = 0; i < this.size.x; ++i)
+            this.data = new Matrix<Cell>(this.dimension.x, this.dimension.y);
+            for (var i = 0; i < this.dimension.x; ++i)
             {
-                for (var j = 0; j < this.size.y; ++j)
+                for (var j = 0; j < this.dimension.y; ++j)
                 {
                     this.data[i, j] = new Cell();
                 }
@@ -163,7 +163,7 @@ namespace UnityMPM
 
         public bool inGrid(int2 index)
         {
-            return 0 <= index.x && index.x < this.size.x && 0 <= index.y && index.y < this.size.y;
+            return 0 <= index.x && index.x < this.dimension.x && 0 <= index.y && index.y < this.dimension.y;
         }
         public void OnDrawGizmos()
         {
@@ -173,11 +173,11 @@ namespace UnityMPM
                 using (new GizmosScope(new Color(0, 1, 0, 0.05f), Matrix4x4.identity))
                 {
                     var c = new float3(this.center, 0);
-                    var s = new float3(this.size, 0) * this.h;
+                    var s = new float3(this.dimension, 0) * this.h;
                     Gizmos.DrawWireCube(c, s);
 
-                    for (var gi = 0; gi < this.size.x; ++gi)
-                        for (var gj = 0; gj < this.size.y; ++gj)
+                    for (var gi = 0; gi < this.dimension.x; ++gi)
+                        for (var gj = 0; gj < this.dimension.y; ++gj)
                         {
                             var cc = new float3(this.ToGridPos(new int2(gi, gj)), 0);
                             var cs = new float3(this.h, this.h, 0);
@@ -188,8 +188,8 @@ namespace UnityMPM
             if (vel)
                 using (new GizmosScope(Color.red, Matrix4x4.identity))
                 {
-                    for (var gi = 0; gi < this.size.x; ++gi)
-                        for (var gj = 0; gj < this.size.y; ++gj)
+                    for (var gi = 0; gi < this.dimension.x; ++gi)
+                        for (var gj = 0; gj < this.dimension.y; ++gj)
                         {
                             var c = this.data[gi, gj];
 
@@ -233,7 +233,7 @@ namespace UnityMPM
         protected ParticleGPU[] gpuData;
         protected ComputeBuffer gpuBuffer;
 
-        protected Grid g;
+        protected GridOld g;
 
         protected void OnEnable()
         {
@@ -251,7 +251,7 @@ namespace UnityMPM
         {
             var c = 0;
             // if (Input.GetKey(KeyCode.Space))
-            while (c++ < 3)
+            while (c++ < 2)
             {
                 this.Step();
             }
@@ -276,7 +276,7 @@ namespace UnityMPM
         {
             this.mu = E / (2f * (1f + v));
             this.lambda = (E * v) / ((1f + v) * (1f - 2f * v));
-            this.g = new Grid(this.gridSize, new float2(0, 0), this.h);
+            this.g = new GridOld(this.gridSize, new float2(0, 0), this.h);
 
             if (this.gpuBuffer != null) this.gpuBuffer.Release();
 
@@ -306,7 +306,7 @@ namespace UnityMPM
                 this.particles[i] = p;
             }
 
-            var massSum = new Matrix<float>(this.g.size.x, this.g.size.y);
+            var massSum = new Matrix<float>(this.g.dimension.x, this.g.dimension.y);
             foreach (var p in this.particles)
             {
                 p.CalculateWeightMatrix(this.g);
@@ -324,9 +324,9 @@ namespace UnityMPM
                 }
             }
 
-            for (var gx = 0; gx < this.g.size.x; ++gx)
+            for (var gx = 0; gx < this.g.dimension.x; ++gx)
             {
-                for (var gy = 0; gy < this.g.size.y; ++gy)
+                for (var gy = 0; gy < this.g.dimension.y; ++gy)
                 {
                     massSum[gx, gy] /= this.g.h * this.g.h;
                 }
@@ -379,7 +379,10 @@ namespace UnityMPM
                 p.CalculateWeightMatrix(this.g);
                 p.CalculateD(this.g);
 
-                var apic = math.mul(p.B, math.inverse(p.D));
+                var apic = math.mul(p.B, new float2x2(4,0,0,4));
+                // var apic = math.mul(p.B, math.inverse(p.D));
+
+                // Debug.Log(apic);
 
                 var gidx = this.g.ToGridIndex(p.pos);
                 for (int gx = -1, mx = 0; gx <= 1; ++gx, ++mx)
@@ -478,9 +481,9 @@ namespace UnityMPM
         // }
         protected void UpdateGrid()
         {
-            for (var gx = 0; gx < this.g.size.x; ++gx)
+            for (var gx = 0; gx < this.g.dimension.x; ++gx)
             {
-                for (var gy = 0; gy < this.g.size.y; ++gy)
+                for (var gy = 0; gy < this.g.dimension.y; ++gy)
                 {
                     var c = this.g[gx, gy];
                     if (c.mass <= 0)
@@ -543,17 +546,17 @@ namespace UnityMPM
                 }
             }
 
-            for (var gx = 0; gx < this.g.size.x; ++gx)
+            for (var gx = 0; gx < this.g.dimension.x; ++gx)
             {
-                for (var gy = 0; gy < this.g.size.y; ++gy)
+                for (var gy = 0; gy < this.g.dimension.y; ++gy)
                 {
                     var c = this.g[gx, gy];
                     if(c.mass > 0)
                     {
                         var g = new float2(0f,-9.8f);
                         c.vel += dt * (c.force / c.mass + g);
-                        if (gx < 2 || gx > this.g.size.x - 2) c.vel.x = 0;
-                        if (gy < 2 || gy > this.g.size.y - 2) c.vel.y = 0;
+                        if (gx < 2 || gx > this.g.dimension.x - 2) c.vel.x = 0;
+                        if (gy < 2 || gy > this.g.dimension.y - 2) c.vel.y = 0;
                     }
                 }
             }
@@ -595,7 +598,7 @@ namespace UnityMPM
                 }
 
                 p.pos += dt * p.vel;
-                p.pos = math.clamp(p.pos, this.g.start, this.g.start + new float2(this.g.size) * this.g.h);
+                p.pos = math.clamp(p.pos, this.g.start, this.g.start + new float2(this.g.dimension) * this.g.h);
 
 
                 var F = p.Fe;

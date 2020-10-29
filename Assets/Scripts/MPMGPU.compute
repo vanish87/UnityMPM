@@ -8,7 +8,7 @@
 #include "Common.cginc"
 #include "Math.cginc"
 
-static const float dt = 0.05;
+static const float dt = 0.001;
 
 struct Particle
 {
@@ -180,7 +180,7 @@ void P2G ( uint3 Gid : SV_DispatchThreadID)
 	{
         Particle p = particles[pi];
         // float2x2 apic = mul(p.B, inverse(p.D));
-        float2x2 apic = mul(p.B, float2x2(4,0,0,4));
+        // float2x2 apic = mul(p.B, float2x2(4,0,0,4));
 
         int2 gidx = int2(p.pos.x, p.pos.y);
         for (int gx = -1, mx = 0; gx <= 1; ++gx, ++mx)
@@ -195,13 +195,10 @@ void P2G ( uint3 Gid : SV_DispatchThreadID)
                     float2 gpos = ToGPos(id);
                     float w = p.Weight[mx][my];
                     c.mass += p.mass * w;
-                    c.mv += w * p.mass * (p.vel + mul(apic, (gpos-p.pos)));
 
 
-
-                    float2 wd = ToWD(p, mx, my);
                     float2x2 F = p.Fe;
-                    float j = determinant(F);
+                    float j = clamp(determinant(F), 0.6, 20);
                     float volume = p.volume;
 
                     float2x2 R = 0;
@@ -209,30 +206,29 @@ void P2G ( uint3 Gid : SV_DispatchThreadID)
                     GetPolarDecomposition2D(F, R, S);
 
                     // float e = p.type == Particle.Type.Snow ? math.exp(hardening * (1 - p.Jp)) : 1f;//snow
-                    float e = 1;
-                    float mu = 30;
-                    float lambda = 20;
+                    float e = 1;//exp(hardening * (1 - p.Jp));
+
+                    float E = 1.4e5f;// Young's modulus
+                    float v = 0.2f;// Poisson's ratio
+                    float mu = E / (2.f * (1.f + v));
+                    // mu = 0;
+                    // p.Fe = float2x2(j,0,0,1);
+                    float lambda = (E * v) / ((1.f + v) * (1.f - 2.f * v));
                     float mup = mu * e;
                     float lambdap = lambda * e;
 
-                    // if(p.type == Particle.Type.Liquid)
-                    // {
-                    //     mup = 0;
-                    //     p.Fe = new float2x2(j,0,0,1);
-                    // }
+                    float2x2 Dinv = float2x2(4, 0, 0, 4);// Mp-1 in Eq29
+                    float2x2 PF = mul((2 * mup * (F - R)), transpose(F)) + lambdap * (j - 1) * j ;
 
-                    // var FinvT = math.transpose(math.inverse(F));
-                    // var PF = (2f * mup * (F - R)) + lambdap * (j - 1f) * j * FinvT;
+                    float2x2 stress = -(dt * volume) * mul(Dinv, PF);
+                    float2x2 apic = stress + p.mass * p.B;
+                    
+                    c.mv += w * (p.vel * p.mass + mul(apic, (gpos-p.pos)));
 
-                    // PF = mu * (F - FinvT) + lambda * math.log(j) * FinvT;
-                    // stress = -(dt * p.V) * math.mul(math.inverse(p.D), PF);
-                    float2x2 PF = mul((2.0f * mup * (F - R)), transpose(F)) + lambdap * (j - 1.0f) * j;
-
-                    float2x2 stress = 1.0f / j * mul(PF, transpose(F));
-                    c.force += -volume * mul(stress, wd);
                 }
             }
         }
+        particles[pi] = p;
     }
 
     grid[G_ID] = c;
@@ -274,7 +270,7 @@ void G2P (uint3 id : SV_DispatchThreadID)
     float invh = 1.f / spacing;
     int2 gidx = int2(p.pos.x, p.pos.y);
 
-    float2x2 sum = 0;
+    // float2x2 sum = 0;
     p.vel = 0;
     p.B = 0;
 
@@ -288,13 +284,13 @@ void G2P (uint3 id : SV_DispatchThreadID)
             {
                 float2 gpos = ToGPos(id);
                 float w = p.Weight[mx][my];
-                float2 wd = ToWD(p, mx, my);
+                // float2 wd = ToWD(p, mx, my);
                 float2 vel = grid[idx].vel;
 
                 p.vel += w * vel;
-                p.B += w * Outer(vel, gpos-p.pos);
+                p.B += 4 * Outer(w * vel, gpos-p.pos);
 
-                sum+=Outer(vel,wd);
+                // sum+=Outer(vel,wd);
             }
         }
     }
@@ -303,7 +299,7 @@ void G2P (uint3 id : SV_DispatchThreadID)
     p.pos = clamp(p.pos, 0, float2(gsx,gsy));
 
     float2x2 F = p.Fe;
-    F = mul((float2x2(1, 0, 0, 1) + dt * sum), F);
+    F = mul((float2x2(1, 0, 0, 1) + dt * p.B), F);
 
 
     p.Fe = F;
