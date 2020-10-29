@@ -1,9 +1,11 @@
-﻿#pragma kernel Init
+﻿#pragma kernel CalWeights
 #pragma kernel P2G
 #pragma kernel UpdateGrid
 #pragma kernel G2P
 
 #define SIMULATION_BLOCK_SIZE 256
+
+static const float dt = 0.05;
 
 struct Particle
 {
@@ -11,8 +13,8 @@ struct Particle
     float volume;
     float4 color;
 
-    float3 pos;
-    float3 vel;
+    float2 pos;
+    float2 vel;
 
     float2x2 B;
     float2x2 D;
@@ -20,49 +22,148 @@ struct Particle
     float2x2 Fe;
     float2x2 Fp;
 
-    float2x2 Weight;
+    float3x3 Weight;
 
-    float2 dw00; float2 dw01;
-    float2 dw10; float2 dw11;
+    float2 dw00; float2 dw01; float2 dw02;
+    float2 dw10; float2 dw11; float2 dw12;
+    float2 dw20; float2 dw21; float2 dw22;
 };
 
 struct Cell
 {
     float mass;
-    float3 mv;
-    float3 vel;
-    float3 force;
+    float2 mv;
+    float2 vel;
+    float2 force;
 };
 
 
-cbuffer cb
-{
-    float spacing;
-    int2 gridSize;
-    int particleNum;
-};
+float spacing;
+int gsx;
+int gsy;
+int particleNum;
 
 RWStructuredBuffer<Particle> particles;
 RWStructuredBuffer<Cell> grid;
 
 int ToIndex(int2 cell)
 {
-    return cell.x * gridSize.x + cell.y;
+    return cell.x * gsx + cell.y;
 }
 
-[numthreads(1,1,1)]
-void Init (uint3 id : SV_DispatchThreadID)
+float2 ToGPos(int2 idx)
 {
-    for(int i = 0; i < particleNum; ++i)
-    {
+    return idx + 0.5f;
+}
 
+bool IsValid(int2 index)
+{
+    return 0 <= index.x && index.x < gsx && 0 <= index.y && index.y < gsy;
+}
+
+void SetWD(Particle p, int x, int y, float2 value)
+{
+    if(x == 0)
+    {
+        if(y == 0)p.dw00 = value;
+        if(y == 1)p.dw01 = value;
+        if(y == 2)p.dw02 = value;
+        
     }
+    if(x == 1)
+    {
+        if(y == 0)p.dw10 = value;
+        if(y == 1)p.dw11 = value;
+        if(y == 2)p.dw12 = value;
+    }
+    if(x == 2)
+    {
+        if(y == 0)p.dw20 = value;
+        if(y == 1)p.dw21 = value;
+        if(y == 2)p.dw22 = value;
+    }
+}
+
+float2 ToWD(Particle p, int x, int y)
+{
+    if(x == 0)
+    {
+        if(y == 0)return p.dw00;
+        if(y == 1)return p.dw01;
+        if(y == 2)return p.dw02;
+        
+    }
+    if(x == 1)
+    {
+        if(y == 0)return p.dw10;
+        if(y == 1)return p.dw11;
+        if(y == 2)return p.dw12;
+    }
+    if(x == 2)
+    {
+        if(y == 0)return p.dw20;
+        if(y == 1)return p.dw21;
+        if(y == 2)return p.dw22;
+    }
+    return 0;
+}
+
+float N(float x)
+{
+    x = abs(x);
+
+    if (x < 0.5f) return 0.75f - x * x;
+    if (x < 1.5f) return 0.5f * (1.5f - x) * (1.5f - x);
+    return 0;
+}
+
+float DevN(float x)
+{
+    float absx = abs(x);
+    if (absx < 0.5f) return -2 * x;
+    if (absx < 1.5f) return x > 0 ? absx - 1.5f : -(absx - 1.5f);
+    return 0;
+}
+
+float2x2 Outer(float2 u, float2 v)
+{
+    return float2x2(u[0] * v[0], u[0] * v[1], u[1] * v[0], u[1] * v[1]);
+}
+
+
+[numthreads(32,1,1)]
+void CalWeights(uint3 id : SV_DispatchThreadID)
+{
+    Particle p = particles[id.x];
+    float invh = 1.f / spacing;
+    int2 gidx = int2(p.pos.x, p.pos.y);
+
+    for (int gx = -1, mx = 0; gx <= 1; ++gx, ++mx)
+    {
+        for (int gy = -1, my = 0; gy <= 1; ++gy, ++my)
+        {
+            int2 id = gidx + int2(gx, gy);
+            if (IsValid(id))
+            {
+                float2 gpos = ToGPos(id);
+                float2 w = invh * (p.pos - gpos);
+                float nx = N(w.x);
+                float ny = N(w.y);
+                float dnx = DevN(w.x);
+                float dny = DevN(w.y);
+                p.Weight[mx][my] = nx * ny;
+                SetWD(p, mx, my, float2(invh * dnx * ny, nx * invh * dny));
+            }
+        }
+    }
+
+    // p.Weight[1][1] = 1;
+
+    particles[id.x] = p;
     
 }
-groupshared struct {float3 pos; float mass; float3 mv; } particle_data[SIMULATION_BLOCK_SIZE];
-[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
-void P2G ( uint3 Gid   : SV_GroupID,
-		   uint  GI    : SV_GroupIndex)
+[numthreads(32, 1, 1)]
+void P2G ( uint3 Gid : SV_DispatchThreadID)
 {
     const uint G_ID = Gid.x;
     Cell c = grid[G_ID];
@@ -72,35 +173,97 @@ void P2G ( uint3 Gid   : SV_GroupID,
     c.vel = 0;
 
 	[loop]
-	for (uint N_block_ID = 0; N_block_ID < (uint)particleNum; N_block_ID += SIMULATION_BLOCK_SIZE)
+	for (int pi = 0; pi < particleNum; ++pi)
 	{
-		particle_data[GI].pos = particles[N_block_ID + GI].pos;
-		particle_data[GI].mass = particles[N_block_ID + GI].mass;
+        Particle p = particles[pi];
+        // float2x2 apic = mul(p.B, inverse(p.D));
+        float2x2 apic = mul(p.B, float2x2(4,0,0,4));
 
-		GroupMemoryBarrierWithGroupSync();
-
-		//[unroll]
-		for (uint N_tile_ID = 0; N_tile_ID < SIMULATION_BLOCK_SIZE; N_tile_ID++)
-		{
-			float3 N_vel = particle_data[N_tile_ID].pos;
-			float N_mass = particle_data[N_tile_ID].mass;
-
-            c.mass += N_mass;
-            c.mv += N_vel * N_mass;
+        int2 gidx = int2(p.pos.x, p.pos.y);
+        for (int gx = -1, mx = 0; gx <= 1; ++gx, ++mx)
+        {
+            for (int gy = -1, my = 0; gy <= 1; ++gy, ++my)
+            {
+                int2 id = gidx + int2(gx, gy);
+                int idx = ToIndex(id);
+                if(G_ID != idx) continue;
+                if (IsValid(id))
+                {
+                    float2 gpos = ToGPos(id);
+                    float w = p.Weight[mx][my];
+                    c.mass += p.mass * w;
+                    c.mv += w * p.mass * (p.vel + mul(apic, (gpos-p.pos)));
+                }
+            }
         }
     }
 
     grid[G_ID] = c;
 }
-[numthreads(8,8,1)]
-void UpdateGrid (uint3 id : SV_DispatchThreadID)
+[numthreads(32,1,1)]
+void UpdateGrid (uint3 Gid : SV_DispatchThreadID)
 {
-    // TODO: insert actual code here!
+    const uint G_ID = Gid.x;
+    Cell c = grid[G_ID];
+
+    int gx = G_ID/gsx;
+    int gy = G_ID%gsy;
+
+
+    if (c.mass <= 0)
+    {
+        c.mass = 0;
+        c.mv = 0;
+        c.vel = 0;
+    }
+    else
+    {
+        c.vel = c.mv / c.mass;
+
+        float3 g = float3(0.0f,-9.8f, 0.0f);
+        c.vel += dt * (c.force / c.mass + g);
+        if (gx < 2 || gx > gsx - 2) c.vel.x = 0;
+        if (gy < 2 || gy > gsy - 2) c.vel.y = 0;
+    }
+    
+
+    grid[G_ID] = c;
 
 }
-[numthreads(8,8,1)]
+[numthreads(32,1,1)]
 void G2P (uint3 id : SV_DispatchThreadID)
 {
-    // TODO: insert actual code here!
+    Particle p = particles[id.x];
+    float invh = 1.f / spacing;
+    int2 gidx = int2(p.pos.x, p.pos.y);
 
+    float2x2 sum = 0;
+    p.vel = 0;
+    p.B = 0;
+
+    for (int gx = -1, mx = 0; gx <= 1; ++gx, ++mx)
+    {
+        for (int gy = -1, my = 0; gy <= 1; ++gy, ++my)
+        {
+            int2 id = gidx + int2(gx, gy);
+            int idx = ToIndex(id);
+            if (IsValid(id))
+            {
+                float2 gpos = ToGPos(id);
+                float w = p.Weight[mx][my];
+                float2 wd = ToWD(p, mx, my);
+                float2 vel = grid[idx].vel;
+
+                p.vel += w * vel;
+                p.B += w * Outer(vel, gpos-p.pos);
+
+                sum+=Outer(vel,wd);
+            }
+        }
+    }
+
+    p.pos += dt * p.vel;
+    p.pos = clamp(p.pos, 0, float2(gsx,gsy));
+
+    particles[id.x] = p;
 }
