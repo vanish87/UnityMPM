@@ -138,6 +138,7 @@ namespace UnityMPM
                             SVD.GetPolarDecomposition2D(F, out R, out S);
                                 
                             var Jp = math.determinant(p.Fp);
+                            Jp = math.clamp(Jp, 0.6f, 20f);
                             var e = p.type == MPMGPU.Particle.Type.Snow ? math.exp(hardening * (1 - Jp)) : 1f;
                             var mup = mu * e;
                             var lambdap = lambda * e;
