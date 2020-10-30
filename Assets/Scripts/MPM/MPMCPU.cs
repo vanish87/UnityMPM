@@ -143,6 +143,13 @@ namespace UnityMPM
                             var mup = mu * e;
                             var lambdap = lambda * e;
 
+                            if(p.type == MPMGPU.Particle.Type.Liquid)
+                            {
+                                mup = 0;
+                                lambdap = 5000;
+                                p.Fe = new float3x3(j, 0, 0, 0, 1, 0, 0, 0, 1);
+                            }
+
                             var FinvT = math.transpose(math.inverse(F));
                             var P = (2f * mup * (F - R)) + lambdap * (j - 1f) * j * FinvT;
 
@@ -293,18 +300,13 @@ namespace UnityMPM
 
         }
 
-        protected void Start()
+        protected void AddPos(List<float3> pos, MPMGPU.Particle.Type type)
         {
-            this.mu = E / (2f * (1f + v));
-            this.lambda = (E * v) / ((1f + v) * (1f - 2f * v));
-
-            var pos = Tool.GenerateBox(new float3(15, 12, 0), new float3(3, 3, 0), 0.3f);
-            pos.AddRange(Tool.GenerateBox(new float3(16, 22, 0), new float3(3, 8, 0), 0.5f));
             foreach(var p in pos)
             {
                 this.particles.Add(new MPMGPU.Particle() 
                 { 
-                    type = MPMGPU.Particle.Type.Snow,
+                    type = type,
                     pos = p, 
                     mass = 1,
                     vel = 0,
@@ -314,6 +316,21 @@ namespace UnityMPM
                     Fp = Tool.identity
                 });
             }
+        }
+
+        protected void Start()
+        {
+            this.mu = E / (2f * (1f + v));
+            this.lambda = (E * v) / ((1f + v) * (1f - 2f * v));
+
+            var pos = Tool.GenerateBox(new float3(15, 18, 0), new float3(3, 3, 0), 0.3f);
+            this.AddPos(pos, MPMGPU.Particle.Type.Snow);
+
+            pos = Tool.GenerateBox(new float3(19, 22, 0), new float3(3, 8, 0), 0.5f);
+            this.AddPos(pos, MPMGPU.Particle.Type.Elastic);
+
+            pos = Tool.GenerateBox(new float3(16, 10, 0), new float3(25, 10, 0), 0.7f);
+            this.AddPos(pos, MPMGPU.Particle.Type.Liquid);
 
             this.CalculateDensity();
 
@@ -323,7 +340,9 @@ namespace UnityMPM
 
         protected void Update()
         {
+            var c =0;
             // if(Input.GetKey(KeyCode.Space))
+            // while(c++ < 5)
             this.Step();
         }
 
