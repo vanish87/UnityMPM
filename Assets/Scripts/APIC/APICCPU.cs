@@ -10,32 +10,22 @@ namespace UnityMPM
 {
     public class APICCPU : MonoBehaviour
     {
+        [System.Serializable]
+        public class APICGrid : Grid<APICGPU.Cell>
+        {
+            public APICGrid(int3 dimesion, float3 cellSpacing, float3 leftBottom, CenterType centerType = CenterType.Center) : base(dimesion, cellSpacing, leftBottom, centerType)
+            {
+                this.visualize = true;
+                this.cellScale = 0.05f;
+            }
+        }
         [SerializeField] protected int3 dim = new int3(32, 32, 1);
         [SerializeField] protected float3 spacing = new float3(1, 1, 0);
-        [SerializeField] protected float cellScale = 1;
-
         [SerializeField] protected float dt = 0.05f;
+        [SerializeField] protected bool particleDebug = false;
 
-        protected Grid<APIC.Cell> grid;
-        protected List<APIC.ParticleAPIC> particles = new List<APIC.ParticleAPIC>();
-
-        public static List<float3> GenerateBox(float3 center, float3 size, float spacing = 1)
-        {
-            var ret = new List<float3>();
-            var count = new int3(size / spacing) + 1;
-            foreach(var x in Enumerable.Range(0,count.x))
-            {
-                foreach(var y in Enumerable.Range(0, count.y))
-                {
-                    foreach(var z in Enumerable.Range(0, count.z))
-                    {
-                        var local = new float3(x, y, z) * spacing;
-                        ret.Add(center - size * 0.5f + local);
-                    }
-                }
-            }
-            return ret;
-        }
+        [SerializeField] protected APICGrid grid;
+        protected List<APICGPU.Particle> particles = new List<APICGPU.Particle>();
 
         protected void Step()
         {
@@ -77,7 +67,7 @@ namespace UnityMPM
                             if (!this.grid.InGrid(idx)) continue;
 
                             var w = this.grid.GetWeight(p.pos, delta);
-                            var gpos = this.grid.IndexToCenter(idx);
+                            var gpos = this.grid.IndexToCellPos(idx);
 
 
                             this.grid[idx].mass += w * p.mass;
@@ -129,13 +119,14 @@ namespace UnityMPM
                     for (int gy = -1, my = 0; gy <= 1; ++gy, ++my)
                     {
                         for (int gz = -1, mz = 0; gz <= 1; ++gz, ++mz)
+                        // var gz = 0;
                         {
                             var delta = new int3(gx, gy, gz);
                             var idx = gidx + delta;
                             if (!this.grid.InGrid(idx)) continue;
 
                             var w = this.grid.GetWeight(p.pos, delta);
-                            var gpos = this.grid.IndexToCenter(idx);
+                            var gpos = this.grid.IndexToCellPos(idx);
                             var vel = this.grid[idx].vel;
 
 
@@ -163,10 +154,15 @@ namespace UnityMPM
 
         protected void Start()
         {
-            var pos = GenerateBox(new float3(5,10,0), new float3(8,8,0), 0.5f);
+            var pos = Tool.GenerateBox(new float3(15,25,0), new float3(8,8,0), 0.5f);
             foreach(var p in pos)
             {
-                this.particles.Add(new APIC.ParticleAPIC() { pos = p, mass = 1 });
+                this.particles.Add(new APICGPU.Particle() 
+                { 
+                    pos = p, 
+                    mass = 1,
+                    // vel = new float3(UnityEngine.Random.value, UnityEngine.Random.value,0)
+                });
             }
 
             var render = this.GetComponent<PositionRender>();
@@ -175,21 +171,47 @@ namespace UnityMPM
 
         protected void Update()
         {
-            if(Input.GetKey(KeyCode.Space))
+            // if(Input.GetKeyDown(KeyCode.Space))
             this.Step();
         }
 
         protected void OnEnable()
         {
-            this.grid = new Grid<APIC.Cell>(this.dim, this.spacing, float3.zero);
+            this.grid = new APICGrid(this.dim, this.spacing, float3.zero);
         }
 
         protected void OnDrawGizmos()
         {
             using(new GizmosScope(new Color(0,1,0,0.1f), Matrix4x4.identity))
             {
-                this.grid?.OnDrawGizmos(Matrix4x4.Scale(new Vector3(this.cellScale, this.cellScale, this.cellScale)));
+                this.grid?.OnDrawGizmos();
             }
+
+
+            if (particleDebug && this.particles?.Count > 0)
+            {
+                var p = this.particles[18];
+                var gidx = this.grid.ToIndex(p.pos);
+                for (int gx = -1; gx <= 1; ++gx)
+                {
+                    for (int gy = -1; gy <= 1; ++gy)
+                    {
+                        for (int gz = -1; gz <= 1; ++gz)
+                        {
+                            var delta = new int3(gx, gy, gz);
+                            var idx = gidx + delta;
+                            if (!this.grid.InGrid(idx)) continue;
+
+                            var w = this.grid.GetWeight(p.pos, delta);
+                            Gizmos.DrawWireSphere(this.grid.IndexToCellPos(idx), w);
+                        }
+                    }
+
+                    Gizmos.DrawSphere(p.pos, 0.02f);
+                }
+            }
+
+
         }
     }
 }

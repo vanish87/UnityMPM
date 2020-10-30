@@ -10,9 +10,10 @@ namespace UnityMPM
 {
     public interface IDrawGizmos
     {
-        void OnDrawGizmos(Matrix4x4 parent);
+        void OnDrawGizmos();
     }
-    public class Grid<T> : IDrawGizmos, IEnumerable<T> where T : IDrawGizmos, new()
+    [System.Serializable]
+    public class Grid<Cell> : IDrawGizmos, IEnumerable<Cell> where Cell : IDrawGizmos, new()
     {
         public enum CenterType
         {
@@ -22,39 +23,46 @@ namespace UnityMPM
             //TODO, add all possible for cell center type
         }
 
-        public int DataLength => dimesion.x * dimesion.y * dimesion.z;
-        public T this[int x, int y, int z = 0]
+        public int DataLength => size.x * size.y * size.z;
+        public Cell this[int x, int y, int z = 0]
         {
             get => this.data[this.ToIndex(new int3(x, y, z))];
             set => this.data[this.ToIndex(new int3(x, y, z))] = value;
         }
 
-        public T this[int3 idx]
+        public Cell this[int3 idx]
         {
             get => this.data[this.ToIndex(idx)];
             set => this.data[this.ToIndex(idx)] = value;
         }
 
-        public int3 Dim => this.dimesion;
+        public int3 Dim => this.size;
+        public float3 H => new float3(this.spacing.x > 0 ? this.spacing.x : 1,
+                                      this.spacing.y > 0 ? this.spacing.y : 1,
+                                      this.spacing.z > 0 ? this.spacing.z : 1);
+        public float CellVolume => this.H.x * this.H.y * this.H.z;
 
-        public Bounds Bounds => new Bounds(this.start + this.dimesion * this.spacing / 2, this.dimesion * this.spacing);
+        public Bounds Bounds => new Bounds(this.start + this.size * this.spacing / 2, this.size * this.spacing);
 
-        protected T[] data;
-        protected int3 dimesion;
+        protected Cell[] data;
+        protected int3 size;
         protected float3 spacing;
         protected float3 start;
         protected CenterType centerType;
 
-        public Grid(int3 dimesion, float3 cellSpacing, float3 leftBottom, CenterType centerType = CenterType.Center)
+        [SerializeField] protected bool visualize = false;
+        [SerializeField] protected float cellScale = 1f;
+
+        public Grid(int3 size, float3 cellSpacing, float3 leftBottom, CenterType centerType = CenterType.Center)
         {
-            this.dimesion = dimesion;
+            this.size = size;
             this.spacing = cellSpacing;
             this.start = leftBottom;
             this.centerType = centerType;
 
             this.InitData();
         }
-        public float3 IndexToCenter(int3 index)
+        public float3 IndexToCellPos(int3 index)
         {
             switch (this.centerType)
             {
@@ -66,7 +74,7 @@ namespace UnityMPM
         }
         public int3 ToIndex(float3 pos)
         {
-            return new int3((pos - this.start) / this.spacing);
+            return new int3((pos - this.start) / this.H);
         }
 
         public int ToIndex(int3 index)
@@ -75,7 +83,7 @@ namespace UnityMPM
             //they are accessed as coordinate
             //same as thread group in compute shader
             //and start from 0
-            return index.x + index.y * this.dimesion.x + index.z * this.dimesion.x * this.dimesion.y;
+            return index.x + index.y * this.size.x + index.z * this.size.x * this.size.y;
         }
 
         public bool InGrid(int3 index)
@@ -90,19 +98,42 @@ namespace UnityMPM
             var gindex = this.ToIndex(pos) + delta;
             if (!this.InGrid(gindex)) return 0;
 
-            var gpos = this.IndexToCenter(gindex);
+            var gpos = this.IndexToCellPos(gindex);
             var dis = pos - gpos;
+            var invH = 1f / this.H;
+            dis *= invH;
 
-            var w = this.N(dis.x) * this.N(dis.y) * this.N(dis.z);
+            var w = this.N(dis.x) * this.N(dis.y) * (this.spacing.z > 0 ? this.N(dis.z) : 1);
             return w;
+        }
+
+        public float3 GetWeightGradient(float3 pos, int3 delta)
+        {
+            var gindex = this.ToIndex(pos) + delta;
+            if (!this.InGrid(gindex)) return 0;
+
+            var gpos = this.IndexToCellPos(gindex);
+            var dis = pos - gpos;
+            var invH = 1f / this.H;
+            dis *= invH;
+
+            var wx = this.N(dis.x);
+            var wy = this.N(dis.y);
+            var wz = this.spacing.z > 0 ? this.N(dis.z) : 1;
+
+            var wdx = this.DevN(dis.x);
+            var wdy = this.DevN(dis.y);
+            var wdz = this.spacing.z > 0 ? this.DevN(dis.z) : 1;
+
+            return invH * new float3(wdx * wy * wz, wx * wdy * wz, wx * wy * wdz);
         }
         public float3x3 GetD()
         {
-            var v = 0.25f * this.spacing * this.spacing;
+            var v = 0.25f * this.H * this.H;
             return
-            new float3x3(v.x>0?v.x:1, 0, 0,
-                         0, v.y>0?v.y:1, 0,
-                         0, 0, v.z>0?v.z:1);
+            new float3x3(v.x, 0, 0,
+                         0, v.y, 0,
+                         0, 0, v.z);
         }
 
         protected float N(float x)
@@ -126,38 +157,37 @@ namespace UnityMPM
 
         protected virtual void InitData()
         {
-            LogTool.AssertIsTrue(this.dimesion.x > 0);
-            LogTool.AssertIsTrue(this.dimesion.y > 0);
-            LogTool.AssertIsTrue(this.dimesion.z > 0);
-            this.data = new T[this.DataLength];
+            LogTool.AssertIsTrue(this.size.x > 0);
+            LogTool.AssertIsTrue(this.size.y > 0);
+            LogTool.AssertIsTrue(this.size.z > 0);
+            this.data = new Cell[this.DataLength];
 
             foreach (var d in Enumerable.Range(0, this.data.Length))
             {
-                this.data[d] = new T();
+                this.data[d] = new Cell();
             }
         }
-        public virtual void OnDrawGizmos(Matrix4x4 parent)
+        public virtual void OnDrawGizmos()
         {
-            // using (new GizmosScope(Gizmos.color, parent))
-            {
-                foreach (var x in Enumerable.Range(0, this.dimesion.x))
-                    foreach (var y in Enumerable.Range(0, this.dimesion.y))
-                        foreach (var z in Enumerable.Range(0, this.dimesion.z))
+            if(!this.visualize) return;
+
+            foreach (var x in Enumerable.Range(0, this.size.x))
+                foreach (var y in Enumerable.Range(0, this.size.y))
+                    foreach (var z in Enumerable.Range(0, this.size.z))
+                    {
+                        var center = this.IndexToCellPos(new int3(x, y, z));
+                        Gizmos.DrawWireCube(center, this.spacing);
+
+                        using (new GizmosScope(Color.red, Matrix4x4.TRS(center, Quaternion.identity, Vector3.one * this.cellScale)))
                         {
-                            var center = this.IndexToCenter(new int3(x, y, z));
-                            Gizmos.DrawWireCube(center, this.spacing);
-
-                            using (new GizmosScope(Color.red, Matrix4x4.Translate(center) * parent))
-                            {
-                                this[x, y, z].OnDrawGizmos(Matrix4x4.identity);
-                            }
+                            this[x, y, z].OnDrawGizmos();
                         }
-            }
+                    }
         }
 
-        public IEnumerator<T> GetEnumerator()
+        public IEnumerator<Cell> GetEnumerator()
         {
-            return this.data.Cast<T>().GetEnumerator();
+            return this.data.Cast<Cell>().GetEnumerator();
         }
 
         IEnumerator IEnumerable.GetEnumerator()

@@ -8,7 +8,7 @@ using static UnityTools.Rendering.PositionRender;
 
 namespace UnityMPM
 {
-    public class APIC : GPUParticleBase<APIC.ParticleAPIC>
+    public class APICGPU : GPUParticleBase<APICGPU.Particle>
     {
         [StructLayout(LayoutKind.Sequential, Size = 48)]
         public class Cell : IDrawGizmos
@@ -20,13 +20,14 @@ namespace UnityMPM
 
             public float2 padding;
 
-            public void OnDrawGizmos(Matrix4x4 parent)
+            public void OnDrawGizmos()
             {
                 Gizmos.DrawSphere(Vector3.zero, this.mass);
+                Gizmos.DrawRay(Vector3.zero, this.mv);
             }
         }
         [StructLayout(LayoutKind.Sequential, Size = 68)]
-        public class ParticleAPIC : AlignedGPUData, IPosition
+        public class Particle : AlignedGPUData, IPosition
         {
             public bool active;
             public float mass;
@@ -41,31 +42,6 @@ namespace UnityMPM
         
         protected Grid<Cell> grid;
 
-        [StructLayout(LayoutKind.Sequential, Size = 256)]
-        public class ParticleMPM
-        {
-            public bool active;
-            public float mass;
-            public float volume;
-            public float3 pos;
-            //24
-            public float3 vel;
-            //36
-            public float2x2 B;
-            //52
-            public float2x2 D;
-            //68
-            public float2x2 Fe;
-            //84
-            public float2x2 Fp;
-            //100
-            public float3x3 weight;
-            //136
-            public float3x3 weightGradientX;
-            public float3x3 weightGradientY;
-            public float3x3 weightGradientZ;
-            //136+108 = 244
-            public float3 padding;
-        }
+        
     }
 }

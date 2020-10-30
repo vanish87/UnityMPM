@@ -15,7 +15,7 @@ namespace UnityTools.Rendering
             float3 Pos { get; }
         }
         public Material mat;
-        public float psize = 0.01f;
+        public float psize = 1f;
 
         protected DisposableMaterial material;
         protected IPosition[] cpuData;
