@@ -27,7 +27,14 @@ namespace UnityMPM
         [StructLayout(LayoutKind.Sequential, Size = 192)]
         public class Particle : IPosition
         {
-            public bool active;
+            public enum Type
+            {
+                Inactive = 0,
+                Elastic,
+                Snow,
+                Liquid,
+            }
+            public Type type;
             public float mass;
             public float volume;
             public float3 pos;

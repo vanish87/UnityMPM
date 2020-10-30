@@ -24,7 +24,7 @@ namespace UnityMPM
         [SerializeField] protected float3 spacing = new float3(1, 1, 0);
         [SerializeField] protected float dt = 0.05f;
 
-        [SerializeField] protected float E = 0.5e4f;// Young's modulus
+        [SerializeField] protected float E = 1.4e4f;// Young's modulus
         [SerializeField] protected float v = 0.2f;// Poisson's ratio
         [SerializeField] protected float hardening = 10f;
 
@@ -136,8 +136,9 @@ namespace UnityMPM
                             var R = new float2x2();
                             var S = new float2x2();
                             SVD.GetPolarDecomposition2D(F, out R, out S);
-
-                            var e = 1f;//p.type == Particle.Type.Snow ? math.exp(hardening * (1 - p.Jp)) : 1f;//snow
+                                
+                            var Jp = math.determinant(p.Fp);
+                            var e = p.type == MPMGPU.Particle.Type.Snow ? math.exp(hardening * (1 - Jp)) : 1f;
                             var mup = mu * e;
                             var lambdap = lambda * e;
 
@@ -209,7 +210,39 @@ namespace UnityMPM
 
                 var F = p.Fe;
                 F = math.mul(Tool.identity + dt * sum, F);
-                p.Fe = F;
+
+                if(p.type == MPMGPU.Particle.Type.Snow)
+                {
+                    var F2d = new float2x2(F[0][0],F[1][0],F[0][1],F[1][1]);
+                    var Fp2d = new float2x2(p.Fp[0][0],p.Fp[1][0],p.Fp[0][1],p.Fp[1][1]);
+                    var U = new float2x2();
+                    var d = new float2();
+                    var V = new float2x2();
+                    SVD.GetSVD2D(F2d, out U, out d, out V);
+
+                    d = math.clamp(d, new float2(1f - 2.5e-2f), new float2(1f + 7.5e-3f));
+                    var D = new float2x2(d[0], 0, 0, d[1]);
+
+                    var Fpn1 = math.mul(F2d, Fp2d);
+                    var Fen1 = math.mul(math.mul(U, D),math.transpose(V));
+                    Fpn1 = math.mul(math.mul(math.mul(V, math.inverse(D)), math.transpose(U)), Fpn1);
+
+                    p.Fe = Tool.identity;
+                    p.Fe[0][0] = Fen1[0][0];
+                    p.Fe[1][0] = Fen1[1][0];
+                    p.Fe[0][1] = Fen1[0][1];
+                    p.Fe[1][1] = Fen1[1][1];
+
+                    p.Fp = Tool.identity;
+                    p.Fp[0][0] = Fpn1[0][0];
+                    p.Fp[1][0] = Fpn1[1][0];
+                    p.Fp[0][1] = Fpn1[0][1];
+                    p.Fp[1][1] = Fpn1[1][1];
+                }
+                else
+                {
+                    p.Fe = F;
+                }
             }
 
 
@@ -270,6 +303,7 @@ namespace UnityMPM
             {
                 this.particles.Add(new MPMGPU.Particle() 
                 { 
+                    type = MPMGPU.Particle.Type.Snow,
                     pos = p, 
                     mass = 1,
                     vel = 0,
