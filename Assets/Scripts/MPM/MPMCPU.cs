@@ -130,12 +130,24 @@ namespace UnityMPM
                             var w = this.grid.GetWeight(p.pos, delta);
                             var wd = this.grid.GetWeightGradient(p.pos, delta);
                             var F = new float2x2(p.Fe[0][0],p.Fe[1][0],p.Fe[0][1],p.Fe[1][1]);
+                            // var F = p.Fe;
                             var j = math.determinant(F);
                             var volume = p.volume;
 
                             var R = new float2x2();
                             var S = new float2x2();
                             SVD.GetPolarDecomposition2D(F, out R, out S);
+                            // var R = Tool.identity;
+                            // var S = Tool.identity;
+                            // var U = new float3x3();
+                            // var d = new float3();
+                            // var V = new float3x3();
+
+                            //Note: 3D is not tested on CPU and is very slow for real time 
+                            // SVD.GetSVD3D(F, out U, out d, out V);
+                            // var D = new float3x3(d[0], 0, 0, 0, d[1], 0, 0, 0, d[2]);
+                            // R = math.mul(U, math.transpose(V));
+                            // S = math.mul(math.mul(V, D), math.transpose(V));
                                 
                             var Jp = math.determinant(p.Fp);
                             Jp = math.clamp(Jp, 0.6f, 20f);
@@ -155,6 +167,8 @@ namespace UnityMPM
 
                             var stress = 1f / j * math.mul(P, math.transpose(F));
                             this.grid[idx].force += new float3(-volume * math.mul(stress, wd.xy),0);
+                            // this.grid[idx].force += -volume * math.mul(stress, wd);
+
                         }
                     }
                 }
@@ -171,8 +185,8 @@ namespace UnityMPM
                 {
                     var g = new float3(0f, -9.8f, 0) * 10;
                     c.vel += dt * (c.force / c.mass + g);
-                    if (x < 2 || x > this.grid.Dim.x - 2) c.vel.x = 0;
-                    if (y < 2 || y > this.grid.Dim.y - 2) c.vel.y = 0;
+                    if (x < 2 || x > this.grid.Dim.x - 3) c.vel.x = 0;
+                    if (y < 2 || y > this.grid.Dim.y - 3) c.vel.y = 0;
                 }
             }
 
