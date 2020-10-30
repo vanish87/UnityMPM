@@ -340,9 +340,8 @@ namespace UnityMPM
 
         protected void Update()
         {
-            var c =0;
             // if(Input.GetKey(KeyCode.Space))
-            // while(c++ < 5)
+            // var c = 0;while(c++ < 5)
             this.Step();
         }
 
