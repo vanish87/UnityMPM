@@ -178,6 +178,11 @@ namespace UnityMPM
         protected void OnEnable()
         {
             this.grid = new APICGrid(this.dim, this.spacing, float3.zero);
+
+            var c = Camera.main;
+            c.orthographic = true;
+            c.orthographicSize = this.grid.Bounds.extents.x;
+            c.transform.position = this.grid.Bounds.center - new Vector3(0, 0, 10f);
         }
 
         protected void OnDrawGizmos()

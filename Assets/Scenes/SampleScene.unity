@@ -250,6 +250,15 @@ MonoBehaviour:
   cs: {fileID: 0}
   m: {fileID: 0}
   particleTexture: {fileID: 0}
+  apicParameter:
+    dimx:
+      data: 32
+    dimy:
+      data: 32
+    dimz:
+      data: 1
+    h:
+      data: 1
 --- !u!4 &815129179
 Transform:
   m_ObjectHideFlags: 0
@@ -510,7 +519,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1847510856
 Transform:
   m_ObjectHideFlags: 0
@@ -619,8 +628,8 @@ MonoBehaviour:
     y: 64
   boxCount: 2
   boxSize:
-    x: 24
-    y: 24
+    x: 16
+    y: 16
 --- !u!114 &1895492571
 MonoBehaviour:
   m_ObjectHideFlags: 0
