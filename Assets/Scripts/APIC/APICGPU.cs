@@ -112,7 +112,6 @@ namespace UnityMPM
 
             this.bufferParameter.particlesIndexBufferActive.Value.SetCounterValue(0);
             this.dispather.Dispatch("InitParticle", this.parameter.numberOfParticles.Value);
-            this.dispather.Dispatch("InitGrid", gdataLength);
 
             this.AddBox();
         }
@@ -131,8 +130,8 @@ namespace UnityMPM
 
         protected void AddBox()
         {
-            var pos = Tool.GenerateBox(new float3(10,10,0), new float3(4,4,1));
-            pos.AddRange(Tool.GenerateBox(new float3(20,20,0), new float3(4,4,1)));
+            var pos = Tool.GenerateBox(new float3(10,10,10), new float3(4,4,4));
+            pos.AddRange(Tool.GenerateBox(new float3(20,20,10), new float3(4,4,4)));
             this.apicParameter.newParticleBuffer.Value = new ComputeBuffer(pos.Count, Marshal.SizeOf<float3>());
 
 

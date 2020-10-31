@@ -147,7 +147,7 @@ float GetWeight(float3 pos, int3 delta)
 	float3 invH = 1.0f / _H;
 	dis *= invH;
 
-	return  N(dis.x) * N(dis.y);// * N(dis.z);
+	return  N(dis.x) * N(dis.y) * N(dis.z);
 }
 
 [numthreads(8,1,1)]
@@ -214,8 +214,8 @@ void UpdateGrid (uint3 DTid : SV_DispatchThreadID)
         float3 g = float3(0.0f,-9.8f, 0.0f);
         c.vel += _DT * (c.force / c.mass + g);
         if (cidx.x < 2 || cidx.x >= _DimX - 2) c.vel.x = 0;
-        if (cidx.y < 2 || cidx.y >= _DimX - 2) c.vel.y = 0;
-        if (cidx.z < 2 || cidx.z >= _DimX - 2) c.vel.z = 0;
+        if (cidx.y < 2 || cidx.y >= _DimY - 2) c.vel.y = 0;
+        if (cidx.z < 2 || cidx.z >= _DimZ - 2) c.vel.z = 0;
     }
     
 
