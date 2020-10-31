@@ -132,20 +132,23 @@ namespace UnityMPM
 
         protected override void Update()
         {
-            var gsize = this.grid.DataLength;
-            var psize = this.bufferParameter.CurrentBufferLength;
-            this.dispather.Dispatch("InitGrid", gsize);
-            this.dispather.Dispatch("P2G", gsize);
-            this.dispather.Dispatch("UpdateGrid", gsize);
-            this.dispather.Dispatch("G2P", psize);
+            var c = 0; while(c++ < 16)
+            {
+                var gsize = this.grid.DataLength;
+                var psize = this.bufferParameter.CurrentBufferLength;
+                this.dispather.Dispatch("InitGrid", gsize);
+                this.dispather.Dispatch("P2G", gsize);
+                this.dispather.Dispatch("UpdateGrid", gsize);
+                this.dispather.Dispatch("G2P", psize);
 
                 // ComputeShaderParameterBuffer.SwapBuffer(this.bufferParameter.particlesDataBufferRead, this.bufferParameter.particlesDataBufferWrite);
+            }
         }
 
         protected void AddBox()
         {
-            var pos = Tool.GenerateBox(new float3(10,10,10), new float3(4,4,4));
-            pos.AddRange(Tool.GenerateBox(new float3(20,20,10), new float3(4,4,4)));
+            var pos = Tool.GenerateBox(new float3(10,10,10), new float3(6,6,4));
+            pos.AddRange(Tool.GenerateBox(new float3(14,20,8), new float3(8,8,4)));
             this.mpmParameter.newParticleBuffer.Value = new ComputeBuffer(pos.Count, Marshal.SizeOf<float3>());
 
 

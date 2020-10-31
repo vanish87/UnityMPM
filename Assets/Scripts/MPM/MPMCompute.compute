@@ -12,6 +12,7 @@
 #pragma kernel G2P
 
 #include "GPUData.cginc"
+#include "Math.cginc"
 
 
 static const float3x3 identity = float3x3(1,0,0,0,1,0,0,0,1);
@@ -65,11 +66,15 @@ void AddParticles(uint3 DTid : SV_DispatchThreadID)
 	uint newpid = DTid.x;
 
 	ParticleData p = _ParticlesDataBufferRead[idx];
-	p.active = true;
+	p.active = 1;
 	p.mass = 1;
+	p.volume = 1;
 	p.position = _CPUNewParticles[newpid];
 	p.velocity = float3(0, 0, 0);
 	p.B = 0;
+	p.D = identity;
+	p.Fe = identity;
+	p.Fp = identity;
 
 	_ParticlesDataBufferEmitWrite[idx] = p;
 }
@@ -149,8 +154,27 @@ float GetWeight(float3 pos, int3 delta)
 
 	return  N(dis.x) * N(dis.y) * N(dis.z);
 }
+float3 GetWeightGradient(float3 pos, int3 delta)
+{
+	int3 gindex = PPosToCIndex(pos) + delta;
+	if (!InGrid(gindex)) return 0;
 
-[numthreads(8,1,1)]
+	float3 gpos = CIndexToCPos(gindex);
+	float3 dis = pos - gpos;
+	float3 invH = 1.0f / _H;
+	dis *= invH;
+
+	float wx = N(dis.x);
+	float wy = N(dis.y);
+	float wz = _DimZ > 1?N(dis.z):1;
+
+	float wdx = DevN(dis.x);
+	float wdy = DevN(dis.y);
+	float wdz = _DimZ > 1?DevN(dis.z):1;
+
+	return invH * float3(wdx * wy * wz, wx * wdy * wz, wx * wy * wdz);
+}
+[numthreads(32,1,1)]
 void P2G (uint3 DTid : SV_DispatchThreadID)
 {
     const uint CellID = DTid.x;
@@ -161,7 +185,42 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
         ParticleData p = _ParticlesDataBufferRead[pi];
 		if(!p.active) continue;
         // float2x2 apic = mul(p.B, inverse(p.D));
-        float3x3 apic = mul(p.B, InvD());
+        // float3x3 apic = mul(p.B, InvD());
+
+		float3x3 F = p.Fe;
+		float j = clamp(determinant(F), 0.6, 20);
+		float volume = p.volume;
+
+		// float2x2 R = 0;
+		// float2x2 S = 0;
+		// GetPolarDecomposition2D(F, R, S);
+		float3x3 U ;
+		float3 d;
+		float3x3 V;
+
+		//Note: 3D is not tested on CPU and is very slow for real time 
+		GetSVD3D(F, U, d, V);
+		float3x3 D = float3x3(d[0], 0, 0, 0, d[1], 0, 0, 0, d[2]);
+		float3x3 R = mul(U, transpose(V));
+
+		// float e = p.type == Particle.Type.Snow ? math.exp(hardening * (1 - p.Jp)) : 1f;//snow
+		float e = 1;//exp(hardening * (1 - p.Jp));
+
+		float E = 1.4e4f;// Young's modulus
+		float v = 0.2f;// Poisson's ratio
+		float mu = E / (2.f * (1.f + v));
+		// mu = 0;
+		// p.Fe = float3x3(j,0,0,0,1,0,0,0,1);
+		float lambda = (E * v) / ((1.f + v) * (1.f - 2.f * v));
+		float mup = mu * e;
+		float lambdap = lambda * e;
+
+		// float2x2 Dinv = float2x2(4, 0, 0, 4);// Mp-1 in Eq29
+		float3x3 Dinv = InvD();
+		float3x3 PF = mul((2 * mup * (F - R)), transpose(F)) + lambdap * (j - 1) * j ;
+
+		float3x3 stress = -(_DT * volume) * mul(Dinv, PF);
+		float3x3 apic = stress + p.mass * p.B;
 
         int3 gidx = PPosToCIndex(p.position);
         for (int gx = -1; gx <= 1; ++gx)
@@ -181,8 +240,13 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 						float3 gpos = CIndexToCPos(cid);
 						float w = GetWeight(p.position, delta);
 
+
+						float3x3 apic3d = float3x3(apic[0][0], apic[0][1], 0,
+						apic[1][0], apic[1][1], 0,
+						0,0,1	);
+
 						c.mass += w * p.mass;
-						c.mv += w * p.mass*(p.velocity  + mul(apic, gpos-p.position));
+						c.mv += w * (p.velocity * p.mass + mul(apic, (gpos-p.position)));
 					}
 				}
 			}
@@ -192,7 +256,7 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 	_Grid[CellID] = c;
 
 }
-[numthreads(8,1,1)]
+[numthreads(32,1,1)]
 void UpdateGrid (uint3 DTid : SV_DispatchThreadID)
 {
 	const uint CellID = DTid.x;
@@ -231,14 +295,14 @@ float3x3 Outer(float3 u, float3 v)
 
 }
 
-[numthreads(8, 1, 1)]
+[numthreads(32, 1, 1)]
 void G2P(uint3 DTid : SV_DispatchThreadID)
 {
 	const uint pid = DTid.x;
 	ParticleData p = _ParticlesDataBufferRead[pid];
 	if(!p.active) return;
 	
-    // float2x2 sum = 0;
+    float3x3 sum = 0;
     p.velocity = 0;
     p.B = 0;
 
@@ -256,13 +320,13 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 				{
 					float3 gpos = CIndexToCPos(cid);
 					float w = GetWeight(p.position, delta);
-					// float2 wd = ToWD(p, mx, my);
+					float3 wd = GetWeightGradient(p.position, delta);
 					float3 vel = _Grid[idx].vel;
 
 					p.velocity += w * vel;
 					p.B += w * Outer(vel, gpos-p.position);
 
-					// sum+=Outer(vel,wd);
+					sum+=Outer(vel,wd);
 				}
 			}
 		}
@@ -270,6 +334,12 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 
     p.position += _DT * p.velocity;
     p.position = clamp(p.position, _Start.xyz, float3(_DimX,_DimY,_DimZ) * _H);
+
+    float3x3 F = p.Fe;
+    F = mul(identity + _DT * p.B, F);
+    p.Fe = F;
+
+
 
 
 	_ParticlesDataBufferRead[pid] = p;
