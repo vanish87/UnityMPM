@@ -215,8 +215,8 @@ namespace UnityMPM
         {
             var is2d = this.mpmParameter.dimz == 1;
             var z = is2d ? 0 : 1;
-            var pos = Tool.GenerateBox(new float3(10, 10, 10 * z), new float3(8, 8, 4 * z));
-            pos.AddRange(Tool.GenerateBox(new float3(14, 20, 8 * z), new float3(8, 8, 4 * z)));
+            var pos = Tool.GenerateBox(new float3(10, 10, 10 * z), new float3(3, 3, 4 * z), 0.3f);
+            pos.AddRange(Tool.GenerateBox(new float3(14, 20, 8 * z), new float3(16, 8, 4 * z), 0.3f));
             this.mpmParameter.newParticleBuffer.Value = new ComputeBuffer(pos.Count, Marshal.SizeOf<float3>());
 
 

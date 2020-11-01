@@ -150,6 +150,15 @@ float3 GetWeightGradient(float3 pos, int3 delta)
 
 	return invH * float3(wdx * wy * wz, wx * wdy * wz, wx * wy * wdz);
 }
+float2x2 inverse(float2x2 m)
+{
+    return 1.0f / determinant(m) *
+					float2x2(
+						 m[0][0], -m[0][1], 
+						-m[1][0],  m[0][0]
+					);
+}
+
 float3x3 inverse(float3x3 m)
 {
 	return 1.0f / determinant(m) *
@@ -186,7 +195,7 @@ void AddParticles(uint3 DTid : SV_DispatchThreadID)
 	uint newpid = DTid.x;
 
 	ParticleData p = _ParticlesDataBufferRead[idx];
-	p.type = 1;
+	p.type = 3;
 	p.mass = 1;
 	p.volume = 1;
 	p.position = _CPUNewParticles[newpid];
@@ -296,6 +305,7 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 						if(p.type == 2)
 						{
 							float jp = determinant(p.Fp);
+							jp = clamp(jp, 0.6f,20.0f);
 							e = exp(_hardening * (1 - jp));
 						}
 						else
@@ -442,7 +452,42 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 
     float3x3 F = p.Fe;
     F = mul(identity + _DT * sum, F);
-    p.Fe = F;
+	if(p.type == 2)
+	{
+		if(is2D())
+		{
+			float2x2 F2d = float2x2(F[0][0],F[0][1],F[1][0],F[1][1]);
+			float2x2 Fp2d = float2x2(p.Fp[0][0],p.Fp[0][1],p.Fp[1][0],p.Fp[1][1]);
+			float2x2 U;
+			float2 d;
+			float2x2 V;
+			GetSVD2D(F2d, U, d, V);
+			float dl = 1.0f - 2.5e-2f;
+			float du = 1.0f + 7.5e-3f;
+			d = clamp(d, float2(dl,dl), float2(du,du));
+			float2x2 D = float2x2(d[0], 0, 0, d[1]);
+
+			float2x2 Fpn1 = mul(F2d, Fp2d);
+			float2x2 Fen1 = mul(mul(U, D),transpose(V));
+			Fpn1 = mul(mul(mul(V, inverse(D)), transpose(U)), Fpn1);
+
+			p.Fe = identity;
+			p.Fe[0][0] = Fen1[0][0];
+			p.Fe[1][0] = Fen1[1][0];
+			p.Fe[0][1] = Fen1[0][1];
+			p.Fe[1][1] = Fen1[1][1];
+
+			p.Fp = identity;
+			p.Fp[0][0] = Fpn1[0][0];
+			p.Fp[1][0] = Fpn1[1][0];
+			p.Fp[0][1] = Fpn1[0][1];
+			p.Fp[1][1] = Fpn1[1][1];
+		}
+	}
+	else
+	{
+		p.Fe = F;
+	}
 
 	_ParticlesDataBufferRead[pid] = p;
 
