@@ -1,0 +1,469 @@
+﻿
+
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel InitParticle
+
+
+#pragma kernel AddParticles
+#pragma kernel CalGridDensity
+#pragma kernel UpdateParticleVolume
+
+#pragma kernel InitGrid
+#pragma kernel P2G
+#pragma kernel UpdateGrid
+#pragma kernel G2P
+
+#include "GPUData.cginc"
+#include "Math.cginc"
+ 
+static const float3x3 identity = float3x3(1,0,0,0,1,0,0,0,1);
+static const float3x3 identity2d = float3x3(1,0,0,0,1,0,0,0,0);
+
+#define GTHREAD_SIZE 32
+#define PTHREAD_SIZE 256
+
+cbuffer cb
+{
+    int _NumberOfParticles;
+    int _ActiveNumberOfParticles;
+
+	float _DT;
+};
+
+cbuffer grid
+{
+	float4 _Start;
+	uint _DimX;
+	uint _DimY;
+	uint _DimZ;
+	float _H;
+}
+
+cbuffer mpm
+{
+	float _E;
+	float _nu;
+	float _mu;
+	float _lambda;
+	float _hardening;
+}
+
+RWStructuredBuffer<ParticleData> _ParticlesDataBufferRead;
+//Not used
+RWStructuredBuffer<ParticleData> _ParticlesDataBufferWrite;
+RWStructuredBuffer<ParticleData> _ParticlesDataBufferEmitWrite;
+
+AppendStructuredBuffer<uint> _ParticlesIndexBufferActive;
+ConsumeStructuredBuffer<uint> _ParticlesIndexBufferDead;
+
+AppendStructuredBuffer<uint> _ParticlesIndexBufferInit;
+
+RWStructuredBuffer<CellData> _Grid;
+
+StructuredBuffer<float3> _CPUNewParticles;
+
+
+float N(float x)
+{
+    x = abs(x);
+
+    if (x < 0.5f) return 0.75f - x * x;
+    if (x < 1.5f) return 0.5f * (1.5f - x) * (1.5f - x);
+    return 0;
+}
+
+float DevN(float x)
+{
+    float absx = abs(x);
+    if (absx < 0.5f) return -2 * x;
+    if (absx < 1.5f) return x > 0 ? absx - 1.5f : -(absx - 1.5f);
+    return 0;
+}
+
+float3x3 InvD()
+{
+	return 4.0f * identity * _H * _H;
+}
+
+bool Is2D()
+{
+	return _DimZ == 1;
+}
+// void Set3DZero(inout float3x3 mat)
+// {
+// 	mat[2] = mat[0][2] = mat[1][2] = 0;
+// }
+
+uint3 PPosToCIndex(float3 pos)
+{
+	return uint3(pos-_Start.xyz);
+}
+
+uint CIndexToCDIndex(uint3 idx)
+{
+	return idx.x + idx.y * _DimX + idx.z * _DimX * _DimY;
+}
+
+uint3 CDIndexToCIndex(uint idx)
+{
+	uint z = idx/(_DimX * _DimY);
+	uint xy = idx%(_DimX * _DimY);
+
+	return uint3(xy%_DimX, xy/_DimX, z);
+}
+
+float3 CIndexToCPos(uint3 idx)
+{
+	return _Start.xyz + (idx + 0.5f) * _H;
+}
+
+bool InGrid(uint3 idx)
+{
+	uint cdid = CIndexToCDIndex(idx);
+	return 0<= cdid && cdid < _DimX * _DimY *_DimZ;
+}
+float GetWeight(float3 pos, int3 delta)
+{
+	int3 gindex = PPosToCIndex(pos) + delta;
+	if (!InGrid(gindex)) return 0;
+
+	float3 gpos = CIndexToCPos(gindex);
+	float3 dis = pos - gpos;
+	float3 invH = 1.0f / _H;
+	dis *= invH;
+
+	return  N(dis.x) * N(dis.y) *(Is2D()?1: N(dis.z));
+}
+float3 GetWeightGradient(float3 pos, int3 delta)
+{
+	int3 gindex = PPosToCIndex(pos) + delta;
+	if (!InGrid(gindex)) return 0;
+
+	float3 gpos = CIndexToCPos(gindex);
+	float3 dis = pos - gpos;
+	float3 invH = 1.0f / _H;
+	dis *= invH;
+
+	float wx = N(dis.x);
+	float wy = N(dis.y);
+	float wz = Is2D()?1:N(dis.z);
+
+	float wdx = DevN(dis.x);
+	float wdy = DevN(dis.y);
+	float wdz = Is2D()?0:DevN(dis.z);
+
+	return invH * float3(wdx * wy * wz, wx * wdy * wz, wx * wy * wdz);
+}
+float2x2 inverse(float2x2 m)
+{
+    return 1.0f / determinant(m) *
+					float2x2(
+						 m[0][0], -m[0][1], 
+						-m[1][0],  m[0][0]
+					);
+}
+
+float3x3 inverse(float3x3 m)
+{
+	return 1.0f / determinant(m) *
+                    float3x3(
+                          m[1][1] * m[2][2] - m[1][2] * m[2][1],
+                        -(m[0][1] * m[2][2] - m[0][2] * m[2][1]),
+                          m[0][1] * m[1][2] - m[0][2] * m[1][1],
+						  
+                        -(m[1][0] * m[2][2] - m[1][2] * m[2][0]),
+                          m[0][0] * m[2][2] - m[0][2] * m[2][0],
+                        -(m[0][0] * m[1][2] - m[0][2] * m[1][0]),
+						
+                          m[1][0] * m[2][1] - m[1][1] * m[2][0],
+                        -(m[0][0] * m[2][1] - m[0][1] * m[2][0]),
+                          m[0][0] * m[1][1] - m[0][1] * m[1][0]
+                    );
+}
+
+
+[numthreads(PTHREAD_SIZE,1,1)]
+void InitParticle(uint3 DTid : SV_DispatchThreadID)
+{
+	uint idx = DTid.x;
+
+	_ParticlesDataBufferRead[idx].position = float3(0,0,0);
+	_ParticlesDataBufferRead[idx].type = 0;
+
+	_ParticlesIndexBufferInit.Append(idx);
+}
+[numthreads(1,1,1)]
+void AddParticles(uint3 DTid : SV_DispatchThreadID)
+{
+	uint idx = _ParticlesIndexBufferDead.Consume();
+	uint newpid = DTid.x;
+
+	ParticleData p = _ParticlesDataBufferRead[idx];
+	p.type = 1;
+	p.mass = 1;
+	p.volume = 1;
+	p.position = _CPUNewParticles[newpid];
+	p.velocity = float3(0, 0, 0);
+	p.C = 0;
+	p.Fe = Is2D()?identity2d:identity;
+	p.Jp = 1;
+
+	_ParticlesDataBufferEmitWrite[idx] = p;
+}
+[numthreads(GTHREAD_SIZE,1,1)]
+void CalGridDensity(uint3 DTid : SV_DispatchThreadID)
+{
+	float volume =  _H*_H*_H;
+	uint idx = DTid.x;
+	CellData c = _Grid[idx];
+	c.mass /= volume;
+	_Grid[idx] = c;
+}
+[numthreads(PTHREAD_SIZE, 1, 1)]
+void UpdateParticleVolume(uint3 DTid : SV_DispatchThreadID)
+{
+	const uint pid = DTid.x;
+	ParticleData p = _ParticlesDataBufferRead[pid];
+	if(!p.type) return;
+
+	float density = 0;
+	int3 gidx = PPosToCIndex(p.position);
+	for (int gx = -1; gx <= 1; ++gx)
+	{
+		for (int gy = -1; gy <= 1; ++gy)
+		{
+			for(int gz = -1; gz <=1; ++gz)
+			{
+				int3 delta = int3(gx,gy,gz);
+				int3 cid = gidx + delta;
+
+				uint idx = CIndexToCDIndex(cid);
+
+				if (InGrid(cid))
+				{
+					float3 gpos = CIndexToCPos(cid);
+					float w = GetWeight(p.position, delta);
+
+					density += _Grid[idx].mass * w;
+				}
+			}
+		}
+	}
+
+	p.volume = p.mass/density;
+	_ParticlesDataBufferRead[pid] = p;
+}
+[numthreads(GTHREAD_SIZE,1,1)]
+void InitGrid(uint3 DTid : SV_DispatchThreadID)
+{
+	uint idx = DTid.x;
+	CellData c = _Grid[idx];
+	c.mass = 0;
+	c.mv = 0;
+	c.force = 0;
+	c.vel = 0;
+	_Grid[idx] = c;
+}
+[numthreads(GTHREAD_SIZE,1,1)]
+void P2G (uint3 DTid : SV_DispatchThreadID)
+{
+    const uint CellID = DTid.x;
+	CellData c = _Grid[CellID];
+	[loop]
+	for (int pi = 0; pi < _NumberOfParticles; ++pi)
+	{
+        ParticleData p = _ParticlesDataBufferRead[pi];
+		if(!p.type) continue;
+
+        int3 gidx = PPosToCIndex(p.position);
+        for (int gx = -1; gx <= 1; ++gx)
+        {
+            for (int gy = -1; gy <= 1; ++gy)
+			{
+				for(int gz = -1; gz <=1; ++gz)
+				{
+					int3 delta = int3(gx,gy,gz);
+					int3 cid = gidx + delta;
+
+					uint idx = CIndexToCDIndex(cid);
+					if(CellID != idx) continue;
+
+					if (InGrid(cid))
+					{
+						float3 gpos = CIndexToCPos(cid);
+						float w = GetWeight(p.position, delta);
+
+						float3x3 F = p.Fe;
+						float3x3 R = identity;
+						float3x3 Dinv = InvD();
+						float volume = p.volume;
+						float j = determinant(F);
+						
+
+						if(Is2D())
+						{
+							float2x2 F2d = float2x2(F[0][0], F[0][1], F[1][0], F[1][1]);
+							float2x2 R2d = 0;
+							float2x2 S = 0;
+							GetPolarDecomposition2D(F2d, R2d, S);
+
+							R = float3x3(R2d[0][0], R2d[0][1], 0,
+										 R2d[1][0], R2d[1][1], 0,
+										 0,0,1);
+						}
+						else
+						{
+							float3x3 U ;
+							float3 d;
+							float3x3 V;
+
+							//Note: 3D is not tested on CPU and is very slow for real time 
+							GetSVD3D(F, U, d, V);
+							float3x3 D = float3x3(d[0], 0, 0, 0, d[1], 0, 0, 0, d[2]);
+							R = mul(U, transpose(V));
+						}
+
+
+						// float dl = 1.0f - 2.5e-2f;
+						// float du = 1.0f + 7.5e-3f;
+						// d = clamp(d, float2(dl,dl), float2(du,du));
+						// float2x2 D = float2x2(d[0], 0, 0, d[1]);
+
+						// float2x2 Fpn1 = mul(F2d, Fp2d);
+						// float2x2 Fen1 = mul(mul(U, D),transpose(V));
+
+						float e = 1;
+						float mu = _mu;
+						float lambda = _lambda;
+
+						if(p.type == 2)
+						{
+							float jp = p.Jp;
+							jp = clamp(jp, 0.6f,20.0f);
+							e = exp(_hardening * (1 - jp));
+						}
+						else
+						if(p.type == 3)
+						{
+							mu = 0;
+							// p.Fe = float3x3(j,0,0,0,1,0,0,0,1);
+						}
+
+						float mup = mu * e;
+						float lambdap = lambda * e;
+
+
+						float3x3 P = mul((2 * mup * (F - R)), transpose(F)) + lambdap * (j - 1) * j ;
+						float3x3 stress = -(_DT * volume) * mul(Dinv , P);
+						float3x3 apic = stress + p.mass * p.C;
+
+						// Set3DZero(apic);
+
+						
+						// j = clamp(j, 0.6f,20.0f);
+						// float3x3 FinvT = transpose(inverse(F));
+						// float3x3 P = (2.0f * mup * (F - R)) + lambdap * (j - 1.0f) * j * FinvT;
+						// float3x3 stress = 1.0f / j * mul(P, transpose(F));
+
+						c.mass += w * p.mass;
+						c.mv += w * (p.mass * p.velocity + mul(apic, (gpos-p.position)));
+						// c.force += -volume * mul(stress, wd);
+					}
+				}
+			}
+		}
+	}
+	_Grid[CellID] = c;
+
+}
+
+[numthreads(GTHREAD_SIZE,1,1)]
+void UpdateGrid(uint3 DTid : SV_DispatchThreadID)
+{
+	const uint CellID = DTid.x;
+    CellData c = _Grid[CellID];
+
+	uint3 cidx = CDIndexToCIndex(CellID);
+
+    if (c.mass <= 0)
+    {
+		c.force = 0;
+        c.mass = 0;
+        c.mv = 0;
+        c.vel = 0;
+    }
+    else
+    {
+        c.vel = c.mv / c.mass;
+
+        float3 g = float3(0.0f,-9.8f, 0.0f);
+        c.vel += _DT * (c.force / c.mass + g);
+        if (cidx.x < 2 || cidx.x >= _DimX - 2) c.vel.x = 0;
+        if (cidx.y < 2 || cidx.y >= _DimY - 2) c.vel.y = 0;
+        if (cidx.z < 2 || cidx.z >= _DimZ - 2) c.vel.z = 0;
+    }
+    
+
+    _Grid[CellID] = c;
+
+}
+float3x3 Outer(float3 u, float3 v)
+{
+	if(Is2D())
+	{
+		return float3x3(u[0]*v[0], u[0]*v[1],0,
+						u[1]*v[0], u[1]*v[1],0,
+						0,0,0);
+	}
+	else
+	{
+		return float3x3(u[0]*v[0], u[0]*v[1],u[0]*v[2],
+						u[1]*v[0], u[1]*v[1],u[1]*v[2],
+						u[2]*v[0], u[2]*v[1],u[2]*v[2]);
+	}
+}
+
+[numthreads(PTHREAD_SIZE, 1, 1)]
+void G2P(uint3 DTid : SV_DispatchThreadID)
+{
+	const uint pid = DTid.x;
+	ParticleData p = _ParticlesDataBufferRead[pid];
+	if(!p.type) return;
+	
+    p.velocity = 0;
+    p.C = 0;
+	float Hinv = 1.0f/_H;
+
+	int3 gidx = PPosToCIndex(p.position);
+	for (int gx = -1; gx <= 1; ++gx)
+	{
+		for (int gy = -1; gy <= 1; ++gy)
+		{
+			for(int gz = -1; gz <=1; ++gz)
+			{
+				int3 delta = int3(gx,gy,gz);
+				int3 cid = gidx + delta;
+				int idx = CIndexToCDIndex(cid);
+				if (InGrid(cid))
+				{
+					float3 gpos = CIndexToCPos(cid);
+					float w = GetWeight(p.position, delta);
+					float3 vel = _Grid[idx].vel;
+
+					p.velocity += w * vel;
+					p.C +=  Hinv * Outer(w * vel, gpos-p.position);
+				}
+			}
+		}
+	}
+
+    p.position += _DT * p.velocity;
+    p.position = clamp(p.position, _Start.xyz, float3(_DimX,_DimY,_DimZ) * _H);
+
+    float3x3 F = p.Fe;
+    F = mul(identity + _DT * p.C, F);
+	p.Fe = F;
+
+	_ParticlesDataBufferRead[pid] = p;
+
+}
