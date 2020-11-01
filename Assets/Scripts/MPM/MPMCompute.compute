@@ -114,6 +114,15 @@ float3x3 InvD()
 	return 4.0f * identity * _H * _H;
 }
 
+bool is2D()
+{
+	return _DimZ == 1;
+}
+void Set3DZero(inout float3x3 mat)
+{
+	mat[2] = mat[0][2] = mat[1][2] = 0;
+}
+
 uint3 PPosToCIndex(float3 pos)
 {
 	return uint3(pos-_Start.xyz);
@@ -152,7 +161,7 @@ float GetWeight(float3 pos, int3 delta)
 	float3 invH = 1.0f / _H;
 	dis *= invH;
 
-	return  N(dis.x) * N(dis.y) * N(dis.z);
+	return  N(dis.x) * N(dis.y) *(is2D()?1: N(dis.z));
 }
 float3 GetWeightGradient(float3 pos, int3 delta)
 {
@@ -166,11 +175,11 @@ float3 GetWeightGradient(float3 pos, int3 delta)
 
 	float wx = N(dis.x);
 	float wy = N(dis.y);
-	float wz = _DimZ > 1?N(dis.z):1;
+	float wz = is2D()?1:N(dis.z);
 
 	float wdx = DevN(dis.x);
 	float wdy = DevN(dis.y);
-	float wdz = _DimZ > 1?DevN(dis.z):1;
+	float wdz = is2D()?1:DevN(dis.z);
 
 	return invH * float3(wdx * wy * wz, wx * wdy * wz, wx * wy * wdz);
 }
@@ -188,20 +197,34 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
         // float3x3 apic = mul(p.B, InvD());
 
 		float3x3 F = p.Fe;
+		float3x3 R = identity;
 		float j = clamp(determinant(F), 0.6, 20);
 		float volume = p.volume;
+		float3x3 Dinv = InvD();
 
-		// float2x2 R = 0;
-		// float2x2 S = 0;
-		// GetPolarDecomposition2D(F, R, S);
-		float3x3 U ;
-		float3 d;
-		float3x3 V;
+		if(is2D())
+		{
+			float2x2 F2d = float2x2(F[0][0], F[0][1], F[1][0], F[1][1]);
+			float2x2 R2d = 0;
+			float2x2 S = 0;
+			GetPolarDecomposition2D(F2d, R2d, S);
 
-		//Note: 3D is not tested on CPU and is very slow for real time 
-		GetSVD3D(F, U, d, V);
-		float3x3 D = float3x3(d[0], 0, 0, 0, d[1], 0, 0, 0, d[2]);
-		float3x3 R = mul(U, transpose(V));
+			R = float3x3(R2d[0][0], R2d[0][1], 0,
+						 R2d[1][0], R2d[1][1], 0,
+						 0,0,1);
+			Set3DZero(F);
+		}
+		else
+		{
+			float3x3 U ;
+			float3 d;
+			float3x3 V;
+
+			//Note: 3D is not tested on CPU and is very slow for real time 
+			GetSVD3D(F, U, d, V);
+			float3x3 D = float3x3(d[0], 0, 0, 0, d[1], 0, 0, 0, d[2]);
+			R = mul(U, transpose(V));
+		}
 
 		// float e = p.type == Particle.Type.Snow ? math.exp(hardening * (1 - p.Jp)) : 1f;//snow
 		float e = 1;//exp(hardening * (1 - p.Jp));
@@ -216,11 +239,12 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 		float lambdap = lambda * e;
 
 		// float2x2 Dinv = float2x2(4, 0, 0, 4);// Mp-1 in Eq29
-		float3x3 Dinv = InvD();
 		float3x3 PF = mul((2 * mup * (F - R)), transpose(F)) + lambdap * (j - 1) * j ;
 
 		float3x3 stress = -(_DT * volume) * mul(Dinv, PF);
 		float3x3 apic = stress + p.mass * p.B;
+
+		if(is2D()) Set3DZero(apic);
 
         int3 gidx = PPosToCIndex(p.position);
         for (int gx = -1; gx <= 1; ++gx)
@@ -239,11 +263,6 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 					{
 						float3 gpos = CIndexToCPos(cid);
 						float w = GetWeight(p.position, delta);
-
-
-						float3x3 apic3d = float3x3(apic[0][0], apic[0][1], 0,
-						apic[1][0], apic[1][1], 0,
-						0,0,1	);
 
 						c.mass += w * p.mass;
 						c.mv += w * (p.velocity * p.mass + mul(apic, (gpos-p.position)));
@@ -338,9 +357,6 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
     float3x3 F = p.Fe;
     F = mul(identity + _DT * p.B, F);
     p.Fe = F;
-
-
-
 
 	_ParticlesDataBufferRead[pid] = p;
 

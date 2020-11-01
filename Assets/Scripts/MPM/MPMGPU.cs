@@ -66,6 +66,7 @@ namespace UnityMPM
             public ComputeShaderParameterInt dimz = new ComputeShaderParameterInt("_DimZ", 1);
             public ComputeShaderParameterFloat h = new ComputeShaderParameterFloat("_H", 1);
             public ComputeShaderParameterFloat dt = new ComputeShaderParameterFloat("_DT", 0.01f);
+            
 
         }
 
@@ -147,8 +148,10 @@ namespace UnityMPM
 
         protected void AddBox()
         {
-            var pos = Tool.GenerateBox(new float3(10,10,10), new float3(6,6,4));
-            pos.AddRange(Tool.GenerateBox(new float3(14,20,8), new float3(8,8,4)));
+            var is2d = this.mpmParameter.dimz == 1;
+            var z = is2d?0:1;
+            var pos = Tool.GenerateBox(new float3(10,10,10*z), new float3(8,8,4*z));
+            pos.AddRange(Tool.GenerateBox(new float3(14,20,8*z), new float3(8,8,4*z)));
             this.mpmParameter.newParticleBuffer.Value = new ComputeBuffer(pos.Count, Marshal.SizeOf<float3>());
 
 
