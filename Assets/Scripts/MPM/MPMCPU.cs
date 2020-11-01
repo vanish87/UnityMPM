@@ -279,7 +279,7 @@ namespace UnityMPM
 
         }
 
-        protected void CalculateDensity()
+        protected void CalculateVolume()
         {
             this.ClearGrid();
             this.P2G();
@@ -346,7 +346,7 @@ namespace UnityMPM
             pos = Tool.GenerateBox(new float3(16, 10, 0), new float3(25, 10, 0), 0.7f);
             this.AddPos(pos, MPMGPU.Particle.Type.Liquid);
 
-            this.CalculateDensity();
+            this.CalculateVolume();
 
             var render = this.GetComponent<PositionRender>();
             render.Init(this.particles.Cast<PositionRender.IPosition>().ToList());

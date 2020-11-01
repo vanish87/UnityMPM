@@ -45,7 +45,7 @@
 		v2g o = (v2g)0;
 		o.position = _ParticleBuffer[id].position;
 		o.color = 1;
-		o.size = _ParticleBuffer[id].active?1:0;
+		o.size = _ParticleBuffer[id].type?1:0;
 		return o;
 	}
 

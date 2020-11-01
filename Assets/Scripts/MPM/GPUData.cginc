@@ -2,7 +2,7 @@
 //aligned by float4(16 bytes)
 struct ParticleData
 {
-    int active;
+    int type;
     float mass;
     float volume;
     float3 position;

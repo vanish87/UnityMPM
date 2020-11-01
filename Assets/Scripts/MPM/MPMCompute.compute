@@ -5,6 +5,8 @@
 
 
 #pragma kernel AddParticles
+#pragma kernel CalGridDensity
+#pragma kernel UpdateParticleVolume
 
 #pragma kernel InitGrid
 #pragma kernel P2G
@@ -13,59 +15,7 @@
 
 #include "GPUData.cginc"
 #include "Math.cginc"
-
-
-float4x4 inverse(float4x4 m) {
-    float n11 = m[0][0], n12 = m[1][0], n13 = m[2][0], n14 = m[3][0];
-    float n21 = m[0][1], n22 = m[1][1], n23 = m[2][1], n24 = m[3][1];
-    float n31 = m[0][2], n32 = m[1][2], n33 = m[2][2], n34 = m[3][2];
-    float n41 = m[0][3], n42 = m[1][3], n43 = m[2][3], n44 = m[3][3];
-
-    float t11 = n23 * n34 * n42 - n24 * n33 * n42 + n24 * n32 * n43 - n22 * n34 * n43 - n23 * n32 * n44 + n22 * n33 * n44;
-    float t12 = n14 * n33 * n42 - n13 * n34 * n42 - n14 * n32 * n43 + n12 * n34 * n43 + n13 * n32 * n44 - n12 * n33 * n44;
-    float t13 = n13 * n24 * n42 - n14 * n23 * n42 + n14 * n22 * n43 - n12 * n24 * n43 - n13 * n22 * n44 + n12 * n23 * n44;
-    float t14 = n14 * n23 * n32 - n13 * n24 * n32 - n14 * n22 * n33 + n12 * n24 * n33 + n13 * n22 * n34 - n12 * n23 * n34;
-
-    float det = n11 * t11 + n21 * t12 + n31 * t13 + n41 * t14;
-    float idet = 1.0f / det;
-
-    float4x4 ret;
-
-    ret[0][0] = t11 * idet;
-    ret[0][1] = (n24 * n33 * n41 - n23 * n34 * n41 - n24 * n31 * n43 + n21 * n34 * n43 + n23 * n31 * n44 - n21 * n33 * n44) * idet;
-    ret[0][2] = (n22 * n34 * n41 - n24 * n32 * n41 + n24 * n31 * n42 - n21 * n34 * n42 - n22 * n31 * n44 + n21 * n32 * n44) * idet;
-    ret[0][3] = (n23 * n32 * n41 - n22 * n33 * n41 - n23 * n31 * n42 + n21 * n33 * n42 + n22 * n31 * n43 - n21 * n32 * n43) * idet;
-
-    ret[1][0] = t12 * idet;
-    ret[1][1] = (n13 * n34 * n41 - n14 * n33 * n41 + n14 * n31 * n43 - n11 * n34 * n43 - n13 * n31 * n44 + n11 * n33 * n44) * idet;
-    ret[1][2] = (n14 * n32 * n41 - n12 * n34 * n41 - n14 * n31 * n42 + n11 * n34 * n42 + n12 * n31 * n44 - n11 * n32 * n44) * idet;
-    ret[1][3] = (n12 * n33 * n41 - n13 * n32 * n41 + n13 * n31 * n42 - n11 * n33 * n42 - n12 * n31 * n43 + n11 * n32 * n43) * idet;
-
-    ret[2][0] = t13 * idet;
-    ret[2][1] = (n14 * n23 * n41 - n13 * n24 * n41 - n14 * n21 * n43 + n11 * n24 * n43 + n13 * n21 * n44 - n11 * n23 * n44) * idet;
-    ret[2][2] = (n12 * n24 * n41 - n14 * n22 * n41 + n14 * n21 * n42 - n11 * n24 * n42 - n12 * n21 * n44 + n11 * n22 * n44) * idet;
-    ret[2][3] = (n13 * n22 * n41 - n12 * n23 * n41 - n13 * n21 * n42 + n11 * n23 * n42 + n12 * n21 * n43 - n11 * n22 * n43) * idet;
-
-    ret[3][0] = t14 * idet;
-    ret[3][1] = (n13 * n24 * n31 - n14 * n23 * n31 + n14 * n21 * n33 - n11 * n24 * n33 - n13 * n21 * n34 + n11 * n23 * n34) * idet;
-    ret[3][2] = (n14 * n22 * n31 - n12 * n24 * n31 - n14 * n21 * n32 + n11 * n24 * n32 + n12 * n21 * n34 - n11 * n22 * n34) * idet;
-    ret[3][3] = (n12 * n23 * n31 - n13 * n22 * n31 + n13 * n21 * n32 - n11 * n23 * n32 - n12 * n21 * n33 + n11 * n22 * n33) * idet;
-
-    return ret;
-} 
-
- float3x3 inverse(float3x3 m)
- {
-	 float4x4 temp = float4x4(m[0][0], m[0][1],m[0][2],0,
-							  m[1][0], m[1][1],m[1][2],0,
-							  m[2][0], m[2][1], m[2][2],0,
-							  0,0,0,0);
-	float4x4 ret = inverse(temp);
-return ret;
-
- }
-
-
+ 
 static const float3x3 identity = float3x3(1,0,0,0,1,0,0,0,1);
 
 cbuffer cb
@@ -109,49 +59,6 @@ RWStructuredBuffer<CellData> _Grid;
 StructuredBuffer<float3> _CPUNewParticles;
 
 
-[numthreads(8,1,1)]
-void InitParticle(uint3 DTid : SV_DispatchThreadID)
-{
-	uint idx = DTid.x;
-
-	_ParticlesDataBufferRead[idx].position = float3(0,0,0);
-	_ParticlesDataBufferRead[idx].type = 0;
-
-	_ParticlesIndexBufferInit.Append(idx);
-}
-[numthreads(1,1,1)]
-void AddParticles(uint3 DTid : SV_DispatchThreadID)
-{
-	uint idx = _ParticlesIndexBufferDead.Consume();
-	uint newpid = DTid.x;
-
-	ParticleData p = _ParticlesDataBufferRead[idx];
-	p.type = 1;
-	p.mass = 1;
-	p.volume = 1;
-	p.position = _CPUNewParticles[newpid];
-	p.velocity = float3(0, 0, 0);
-	p.B = 0;
-	p.D = identity;
-	p.Fe = identity;
-	p.Fp = identity;
-
-	_ParticlesDataBufferEmitWrite[idx] = p;
-}
-
-
-[numthreads(8,1,1)]
-void InitGrid(uint3 DTid : SV_DispatchThreadID)
-{
-	uint idx = DTid.x;
-	CellData c = _Grid[idx];
-	c.mass = 0;
-	c.mv = 0;
-	c.force = 0;
-	c.vel = 0;
-	_Grid[idx] = c;
-}
-
 float N(float x)
 {
     x = abs(x);
@@ -178,10 +85,10 @@ bool is2D()
 {
 	return _DimZ == 1;
 }
-void Set3DZero(inout float3x3 mat)
-{
-	mat[2] = mat[0][2] = mat[1][2] = 0;
-}
+// void Set3DZero(inout float3x3 mat)
+// {
+// 	mat[2] = mat[0][2] = mat[1][2] = 0;
+// }
 
 uint3 PPosToCIndex(float3 pos)
 {
@@ -243,6 +150,108 @@ float3 GetWeightGradient(float3 pos, int3 delta)
 
 	return invH * float3(wdx * wy * wz, wx * wdy * wz, wx * wy * wdz);
 }
+float3x3 inverse(float3x3 m)
+{
+	return 1.0f / determinant(m) *
+                    float3x3(
+                          m[1][1] * m[2][2] - m[1][2] * m[2][1],
+                        -(m[0][1] * m[2][2] - m[0][2] * m[2][1]),
+                          m[0][1] * m[1][2] - m[0][2] * m[1][1],
+						  
+                        -(m[1][0] * m[2][2] - m[1][2] * m[2][0]),
+                          m[0][0] * m[2][2] - m[0][2] * m[2][0],
+                        -(m[0][0] * m[1][2] - m[0][2] * m[1][0]),
+						
+                          m[1][0] * m[2][1] - m[1][1] * m[2][0],
+                        -(m[0][0] * m[2][1] - m[0][1] * m[2][0]),
+                          m[0][0] * m[1][1] - m[0][1] * m[1][0]
+                    );
+}
+
+
+[numthreads(8,1,1)]
+void InitParticle(uint3 DTid : SV_DispatchThreadID)
+{
+	uint idx = DTid.x;
+
+	_ParticlesDataBufferRead[idx].position = float3(0,0,0);
+	_ParticlesDataBufferRead[idx].type = 0;
+
+	_ParticlesIndexBufferInit.Append(idx);
+}
+[numthreads(1,1,1)]
+void AddParticles(uint3 DTid : SV_DispatchThreadID)
+{
+	uint idx = _ParticlesIndexBufferDead.Consume();
+	uint newpid = DTid.x;
+
+	ParticleData p = _ParticlesDataBufferRead[idx];
+	p.type = 1;
+	p.mass = 1;
+	p.volume = 1;
+	p.position = _CPUNewParticles[newpid];
+	p.velocity = float3(0, 0, 0);
+	p.B = 0;
+	p.D = identity;
+	p.Fe = identity;
+	p.Fp = identity;
+
+	_ParticlesDataBufferEmitWrite[idx] = p;
+}
+[numthreads(8,1,1)]
+void CalGridDensity(uint3 DTid : SV_DispatchThreadID)
+{
+	float volume =  _H*_H*_H;
+	uint idx = DTid.x;
+	CellData c = _Grid[idx];
+	c.mass /= volume;
+	_Grid[idx] = c;
+}
+[numthreads(32, 1, 1)]
+void UpdateParticleVolume(uint3 DTid : SV_DispatchThreadID)
+{
+	const uint pid = DTid.x;
+	ParticleData p = _ParticlesDataBufferRead[pid];
+	if(!p.type) return;
+
+	float density = 0;
+	int3 gidx = PPosToCIndex(p.position);
+	for (int gx = -1; gx <= 1; ++gx)
+	{
+		for (int gy = -1; gy <= 1; ++gy)
+		{
+			for(int gz = -1; gz <=1; ++gz)
+			{
+				int3 delta = int3(gx,gy,gz);
+				int3 cid = gidx + delta;
+
+				uint idx = CIndexToCDIndex(cid);
+
+				if (InGrid(cid))
+				{
+					float3 gpos = CIndexToCPos(cid);
+					float w = GetWeight(p.position, delta);
+
+					density += _Grid[idx].mass * w;
+				}
+			}
+		}
+	}
+
+	p.volume = p.mass/density;
+	_ParticlesDataBufferRead[pid] = p;
+}
+[numthreads(8,1,1)]
+void InitGrid(uint3 DTid : SV_DispatchThreadID)
+{
+	uint idx = DTid.x;
+	CellData c = _Grid[idx];
+	c.mass = 0;
+	c.mv = 0;
+	c.force = 0;
+	c.vel = 0;
+	_Grid[idx] = c;
+}
 [numthreads(32,1,1)]
 void P2G (uint3 DTid : SV_DispatchThreadID)
 {
@@ -273,7 +282,6 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 						float w = GetWeight(p.position, delta);
 						float3 wd = GetWeightGradient(p.position, delta);
 
-						c.mass += w * p.mass;
 
 						float3x3 F = p.Fe;
 						float3x3 R = identity;
@@ -310,8 +318,6 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 							R = float3x3(R2d[0][0], R2d[0][1], 0,
 										R2d[1][0], R2d[1][1], 0,
 										0,0,1);
-							Set3DZero(F);
-							Set3DZero(apic);
 						}
 						else
 						{
@@ -326,15 +332,16 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 						}
 
 
-						float3x3 P = mul((2 * mup * (F - R)), transpose(F)) + lambdap * (j - 1) * j ;
-						float3x3 stress = 1.0f/j*mul(P,transpose(F));
+						// float3x3 P = mul((2 * mup * (F - R)), transpose(F)) + lambdap * (j - 1) * j ;
+						// float3x3 stress = 1.0f/j*mul(P,transpose(F));
 
 						
-						// float3x3 FinvT = transpose(inverse(F));
-						// float3x3 P = (2.0f * mup * (F - R)) + lambdap * (j - 1.0f) * j * FinvT;
-						// float3x3 stress = 1.0f / j * mul(P, transpose(F));
+						j = clamp(j, 0.6f,20.0f);
+						float3x3 FinvT = transpose(inverse(F));
+						float3x3 P = (2.0f * mup * (F - R)) + lambdap * (j - 1.0f) * j * FinvT;
+						float3x3 stress = 1.0f / j * mul(P, transpose(F));
 
-
+						c.mass += w * p.mass;
 						c.mv += w * p.mass * (p.velocity + mul(apic, (gpos-p.position)));
 						c.force += -volume * mul(stress, wd);
 					}
@@ -378,14 +385,18 @@ void UpdateGrid(uint3 DTid : SV_DispatchThreadID)
 }
 float3x3 Outer(float3 u, float3 v)
 {
-	// return float3x3(u[0]*v[0], u[0]*v[1],u[0]*v[2],
-	// 				u[1]*v[0], u[1]*v[1],u[1]*v[2],
-	// 				u[2]*v[0], u[2]*v[1],u[2]*v[2]);
-
-
-	return float3x3(u[0]*v[0], u[0]*v[1],0,
-					u[1]*v[0], u[1]*v[1],0,
-					0,0,0);
+	if(is2D())
+	{
+		return float3x3(u[0]*v[0], u[0]*v[1],0,
+						u[1]*v[0], u[1]*v[1],0,
+						0,0,0);
+	}
+	else
+	{
+		return float3x3(u[0]*v[0], u[0]*v[1],u[0]*v[2],
+						u[1]*v[0], u[1]*v[1],u[1]*v[2],
+						u[2]*v[0], u[2]*v[1],u[2]*v[2]);
+	}
 }
 
 [numthreads(32, 1, 1)]
@@ -425,8 +436,6 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 			}
 		}
 	}
-	if(is2D()) Set3DZero(sum);
-	if(is2D()) Set3DZero(p.B);
 
     p.position += _DT * p.velocity;
     p.position = clamp(p.position, _Start.xyz, float3(_DimX,_DimY,_DimZ) * _H);

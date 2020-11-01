@@ -11,6 +11,14 @@ namespace UnityMPM
 {
     public class MPMGPU : GPUParticleBase<MPMGPU.Particle>
     {
+        public static float GetMU(float E, float nu)
+        {
+            return E / (2f * (1f + nu));
+        }
+        public static float GetLambda(float E, float nu)
+        {
+            return (E * nu) / ((1f + nu) * (1f - 2f * nu));
+        }
         [StructLayout(LayoutKind.Sequential, Size = 48)]
         public class Cell : IDrawGizmos
         {
@@ -66,7 +74,15 @@ namespace UnityMPM
             public ComputeShaderParameterInt dimz = new ComputeShaderParameterInt("_DimZ", 1);
             public ComputeShaderParameterFloat h = new ComputeShaderParameterFloat("_H", 1);
             public ComputeShaderParameterFloat dt = new ComputeShaderParameterFloat("_DT", 0.01f);
-            
+
+            // Young's modulus
+            public ComputeShaderParameterFloat E = new ComputeShaderParameterFloat("_E", 1.4e4f);
+            // Poisson's ratio
+            public ComputeShaderParameterFloat nu = new ComputeShaderParameterFloat("_nu", 0.2f);
+            public ComputeShaderParameterFloat hardening = new ComputeShaderParameterFloat("_hardening", 10);
+            public ComputeShaderParameterFloat mu = new ComputeShaderParameterFloat("_mu", 0);
+            public ComputeShaderParameterFloat lambda = new ComputeShaderParameterFloat("_lambda", 0);
+
 
         }
 
@@ -75,9 +91,42 @@ namespace UnityMPM
 
         protected Grid<Cell> grid;
 
+        float3x3 inverse(float3x3 m)
+        {
+            return 1.0f / math.determinant(m) *
+                    new float3x3(
+                          m[1][1] * m[2][2] - m[2][1] * m[1][2],
+                        -(m[1][0] * m[2][2] - m[2][0] * m[1][2]),
+                          m[1][0] * m[2][1] - m[2][0] * m[1][1],
+                        -(m[0][1] * m[2][2] - m[2][1] * m[0][2]),
+                          m[0][0] * m[2][2] - m[2][0] * m[0][2],
+                        -(m[0][0] * m[2][1] - m[2][0] * m[0][1]),
+                          m[0][1] * m[1][2] - m[1][1] * m[0][2],
+                        -(m[0][0] * m[1][2] - m[1][0] * m[0][2]),
+                          m[0][0] * m[1][1] - m[1][0] * m[0][1]
+                    );
+        }
+        protected void Test()
+        {
+            var mat = new float3x3(UnityEngine.Random.value, UnityEngine.Random.value, UnityEngine.Random.value,
+            UnityEngine.Random.value, UnityEngine.Random.value, UnityEngine.Random.value,
+            UnityEngine.Random.value, UnityEngine.Random.value, UnityEngine.Random.value);
+
+            var sysInv = math.inverse(mat);
+            var newInv = inverse(mat);
+
+            Debug.Log(sysInv - newInv);
+
+        }
 
         protected override void OnEnable()
         {
+            float E = this.mpmParameter.E;
+            float nu = this.mpmParameter.nu;
+            this.mpmParameter.mu.Value = GetMU(E, nu);
+            this.mpmParameter.lambda.Value = GetLambda(E, nu);
+
+
             LogTool.AssertNotNull(this.cs);
 
             this.dispather = new ComputeShaderDispatcher(this.cs);
@@ -101,6 +150,14 @@ namespace UnityMPM
 
             this.dispather.AddParameter("AddParticles", this.mpmParameter);
             this.dispather.AddParameter("AddParticles", this.bufferParameter);
+
+            this.dispather.AddParameter("CalGridDensity", this.parameter);
+            this.dispather.AddParameter("CalGridDensity", this.bufferParameter);
+            this.dispather.AddParameter("CalGridDensity", this.mpmParameter);
+
+            this.dispather.AddParameter("UpdateParticleVolume", this.parameter);
+            this.dispather.AddParameter("UpdateParticleVolume", this.bufferParameter);
+            this.dispather.AddParameter("UpdateParticleVolume", this.mpmParameter);
 
 
             this.ResizeBuffer(this.parameter.numberOfParticles.Value);
@@ -129,11 +186,19 @@ namespace UnityMPM
             this.dispather.Dispatch("InitParticle", this.parameter.numberOfParticles.Value);
 
             this.AddBox();
+
+            var gsize = this.grid.DataLength;
+            var psize = this.bufferParameter.CurrentBufferLength;
+            this.dispather.Dispatch("InitGrid", gsize);
+            this.dispather.Dispatch("P2G", gsize);
+            this.dispather.Dispatch("CalGridDensity", gsize);
+            this.dispather.Dispatch("UpdateParticleVolume", psize);
+
         }
 
         protected override void Update()
         {
-            var c = 0; while(c++ < 16)
+            var c = 0; while (c++ < 16)
             {
                 var gsize = this.grid.DataLength;
                 var psize = this.bufferParameter.CurrentBufferLength;
@@ -149,9 +214,9 @@ namespace UnityMPM
         protected void AddBox()
         {
             var is2d = this.mpmParameter.dimz == 1;
-            var z = is2d?0:1;
-            var pos = Tool.GenerateBox(new float3(10,10,10*z), new float3(8,8,4*z));
-            pos.AddRange(Tool.GenerateBox(new float3(14,20,8*z), new float3(8,8,4*z)));
+            var z = is2d ? 0 : 1;
+            var pos = Tool.GenerateBox(new float3(10, 10, 10 * z), new float3(8, 8, 4 * z));
+            pos.AddRange(Tool.GenerateBox(new float3(14, 20, 8 * z), new float3(8, 8, 4 * z)));
             this.mpmParameter.newParticleBuffer.Value = new ComputeBuffer(pos.Count, Marshal.SizeOf<float3>());
 
 
