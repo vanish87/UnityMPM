@@ -337,7 +337,7 @@ namespace UnityMPM
             this.mu = E / (2f * (1f + v));
             this.lambda = (E * v) / ((1f + v) * (1f - 2f * v));
 
-            var pos = Tool.GenerateBox(new float3(15, 18, 0), new float3(3, 3, 0), 0.3f);
+            var pos = Tool.GenerateBox(new float3(13, 18, 0), new float3(5, 5, 0), 0.3f);
             this.AddPos(pos, MPMGPU.Particle.Type.Snow);
 
             pos = Tool.GenerateBox(new float3(19, 22, 0), new float3(3, 8, 0), 0.5f);
