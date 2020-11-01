@@ -190,9 +190,9 @@ namespace UnityMPM
 
             if (this.Is2D)
             {
-                this.AddBox(new float3(20, 20, 0), new float3(16, 16, 0), this.type, 0.5f);
-                this.AddBox(new float3(14, 40, 0), new float3(16, 8, 0), this.type, 1f);
-                this.AddBox(new float3(30, 40, 0), new float3(10, 14, 0), this.type, 1f);
+                this.AddBox(new float3(20, 20, 0), new float3(16, 16, 0), this.type, 0.4f);
+                this.AddBox(new float3(14, 40, 0), new float3(16, 8, 0), this.type, 0.4f);
+                // this.AddBox(new float3(30, 40, 0), new float3(10, 14, 0), this.type, 1f);
             }
             else
             {

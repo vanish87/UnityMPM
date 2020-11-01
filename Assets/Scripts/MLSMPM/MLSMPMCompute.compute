@@ -296,59 +296,53 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 
 						float3x3 F = p.Fe;
 						float3x3 R = identity;
-						float3x3 Dinv = InvD();
+						float3x3 U ;
+						float3 d;
+						float3x3 V;
+
 						float volume = p.volume;
-						float j = determinant(F);
+						float3x3 Dinv = InvD();
 						
 
 						if(Is2D())
 						{
 							float2x2 F2d = float2x2(F[0][0], F[0][1], F[1][0], F[1][1]);
-							float2x2 R2d = 0;
-							float2x2 S = 0;
-							GetPolarDecomposition2D(F2d, R2d, S);
+							float2x2 U2d = 0;
+							float2 d2d = 0;
+							float2x2 V2d = 0;
+							GetSVD2D(F2d, U2d, d2d, V2d);
 
-							R = float3x3(R2d[0][0], R2d[0][1], 0,
-										 R2d[1][0], R2d[1][1], 0,
+							U = float3x3(U2d[0][0], U2d[0][1], 0,
+										 U2d[1][0], U2d[1][1], 0,
+										 0,0,1);
+							d = float3(d2d[0], d2d[1], 0);
+							V = float3x3(V2d[0][0], V2d[0][1], 0,
+										 V2d[1][0], V2d[1][1], 0,
 										 0,0,1);
 						}
 						else
 						{
-							float3x3 U ;
-							float3 d;
-							float3x3 V;
-
 							//Note: 3D is not tested on CPU and is very slow for real time 
 							GetSVD3D(F, U, d, V);
-							float3x3 D = float3x3(d[0], 0, 0, 0, d[1], 0, 0, 0, d[2]);
-							R = mul(U, transpose(V));
 						}
 
 
-						// float dl = 1.0f - 2.5e-2f;
-						// float du = 1.0f + 7.5e-3f;
-						// d = clamp(d, float2(dl,dl), float2(du,du));
-						// float2x2 D = float2x2(d[0], 0, 0, d[1]);
-
-						// float2x2 Fpn1 = mul(F2d, Fp2d);
-						// float2x2 Fen1 = mul(mul(U, D),transpose(V));
+						R = mul(U, transpose(V));
 
 						float e = 1;
 						float mu = _mu;
 						float lambda = _lambda;
 
+						float j = determinant(F);
 						if(p.type == 2)
 						{
-							float jp = p.Jp;
-							jp = clamp(jp, 0.6f,20.0f);
-							e = exp(_hardening * (1 - jp));
+							e = exp(_hardening * (1 - p.Jp));
 						}
 						else
 						if(p.type == 3)
 						{
 							mu = 0;
-							float rj = sqrt(j);
-							F = float3x3(rj,0,0,0,rj,0,0,0,rj);
+							F = float3x3(j,0,0,0,1,0,0,0,1);
 							p.Fe = F;
 						}
 
@@ -463,6 +457,47 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 
     float3x3 F = p.Fe;
     F = mul(identity + _DT * p.C, F);
+
+	if(p.type == 2)
+	{
+		float3x3 U ;
+		float3 d;
+		float3x3 V;
+
+		if(Is2D())
+		{
+			float2x2 F2d = float2x2(F[0][0], F[0][1], F[1][0], F[1][1]);
+			float2x2 U2d = 0;
+			float2 d2d = 0;
+			float2x2 V2d = 0;
+			GetSVD2D(F2d, U2d, d2d, V2d);
+
+			U = float3x3(U2d[0][0], U2d[0][1], 0,
+							U2d[1][0], U2d[1][1], 0,
+							0,0,1);
+			d = float3(d2d[0], d2d[1], 0);
+			V = float3x3(V2d[0][0], V2d[0][1], 0,
+							V2d[1][0], V2d[1][1], 0,
+							0,0,1);
+		}
+		else
+		{
+			//Note: 3D is not tested on CPU and is very slow for real time 
+			GetSVD3D(F, U, d, V);
+		}
+
+		float dl = 1.0f - 2.5e-2f;
+		float du = 1.0f + 4.5e-3f;
+		d = clamp(d, float3(dl,dl,dl), float3(du,du,du));
+		float3x3 D = float3x3(d[0], 0, 0, 0, d[1], 0, 0, 0, d[2]);
+		D[2][2] = 0;
+		
+		float oldj = determinant(F);
+		F = mul(mul(U, D),transpose(V));
+
+		p.Jp = clamp(p.Jp * oldj / determinant(F), 0.6f, 10.0f);
+	}
+
 	p.Fe = F;
 
 	_ParticlesDataBufferRead[pid] = p;
