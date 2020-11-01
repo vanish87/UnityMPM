@@ -72,6 +72,8 @@ namespace UnityMPM
             public ComputeShaderParameterFloat h = new ComputeShaderParameterFloat("_H", 1);
             public ComputeShaderParameterFloat dt = new ComputeShaderParameterFloat("_DT", 0.01f);
 
+            public ComputeShaderParameterInt ptype = new ComputeShaderParameterInt("_ParticleType", 0);
+
             // Young's modulus
             public ComputeShaderParameterFloat E = new ComputeShaderParameterFloat("_E", 1.4e4f);
             // Poisson's ratio
@@ -82,11 +84,15 @@ namespace UnityMPM
 
 
         }
+        [SerializeField] protected Particle.Type type = Particle.Type.Elastic;
 
         [SerializeField]
         protected MPMGPUParameterContainer mpmParameter = new MPMGPUParameterContainer();
+        [SerializeField]
+        protected bool Is2D => this.mpmParameter.dimz == 1;
 
         protected Grid<Cell> grid;
+
 
         float3x3 inverse(float3x3 m)
         {
@@ -182,7 +188,18 @@ namespace UnityMPM
             this.bufferParameter.particlesIndexBufferActive.Value.SetCounterValue(0);
             this.dispather.Dispatch("InitParticle", this.parameter.numberOfParticles.Value);
 
-            this.AddBox();
+            if (this.Is2D)
+            {
+                this.AddBox(new float3(20, 20, 0), new float3(16, 16, 0), this.type, 0.5f);
+                this.AddBox(new float3(14, 40, 0), new float3(16, 8, 0), this.type, 1f);
+                this.AddBox(new float3(30, 40, 0), new float3(10, 14, 0), this.type, 1f);
+            }
+            else
+            {
+                this.AddBox(new float3(20, 10, 10), new float3(4, 4, 4), this.type, 1f);
+                this.AddBox(new float3(10, 25, 10), new float3(4, 8, 4), this.type, 1f);
+                this.AddBox(new float3(20, 20, 10), new float3(12, 8, 4), this.type, 1.5f);
+            }
 
             var gsize = this.grid.DataLength;
             var psize = this.bufferParameter.CurrentBufferLength;
@@ -191,6 +208,8 @@ namespace UnityMPM
             this.dispather.Dispatch("CalGridDensity", gsize);
             this.dispather.Dispatch("UpdateParticleVolume", psize);
 
+
+            this.SetupCamera();
         }
 
         protected override void Update()
@@ -208,24 +227,26 @@ namespace UnityMPM
             }
         }
 
-        protected void AddBox()
+        protected void SetupCamera()
         {
-            var is2d = this.mpmParameter.dimz == 1;
-            var pos = new List<float3>();
-            if(is2d)
+            if(this.Is2D)
             {
-                pos.AddRange(Tool.GenerateBox(new float3(20, 20, 0), new float3(16, 16, 0), 0.5f));
-                pos.AddRange(Tool.GenerateBox(new float3(14, 40, 0), new float3(16, 8, 0), 1f));
-                pos.AddRange(Tool.GenerateBox(new float3(30, 40, 0), new float3(10, 14, 0), 1f));
+                var c = Camera.main;
+                c.orthographic = true;
+                c.orthographicSize = this.grid.Bounds.extents.x;
+                c.transform.position = this.grid.Bounds.center - new Vector3(0, 0, 10f);
             }
-            else
-            {
-                pos.AddRange(Tool.GenerateBox(new float3(20, 10, 10), new float3(4, 4, 4), 1f));
-                pos.AddRange(Tool.GenerateBox(new float3(20, 20, 10), new float3(12, 8, 4), 1.5f));
-            }
+        }
+
+        protected void AddBox(float3 center, float3 size, Particle.Type type, float spacing = 1)
+        {
+            this.mpmParameter.newParticleBuffer.Value?.Release();
+
+            
+            var pos = Tool.GenerateBox(center, size, spacing);
+
+            this.mpmParameter.ptype.Value = (int)type;
             this.mpmParameter.newParticleBuffer.Value = new ComputeBuffer(pos.Count, Marshal.SizeOf<float3>());
-
-
             this.parameter.activeNumberOfParticles.Value += pos.Count;
             this.mpmParameter.newParticleBuffer.Value.SetData(pos.ToArray());
             this.dispather.Dispatch("AddParticles", pos.Count);

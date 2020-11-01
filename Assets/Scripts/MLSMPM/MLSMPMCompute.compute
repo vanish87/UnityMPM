@@ -46,6 +46,7 @@ cbuffer mpm
 	float _mu;
 	float _lambda;
 	float _hardening;
+	int _ParticleType;
 }
 
 RWStructuredBuffer<ParticleData> _ParticlesDataBufferRead;
@@ -199,7 +200,7 @@ void AddParticles(uint3 DTid : SV_DispatchThreadID)
 	uint newpid = DTid.x;
 
 	ParticleData p = _ParticlesDataBufferRead[idx];
-	p.type = 1;
+	p.type = _ParticleType;
 	p.mass = 1;
 	p.volume = 1;
 	p.position = _CPUNewParticles[newpid];
@@ -346,7 +347,9 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 						if(p.type == 3)
 						{
 							mu = 0;
-							// p.Fe = float3x3(j,0,0,0,1,0,0,0,1);
+							float rj = sqrt(j);
+							F = float3x3(rj,0,0,0,rj,0,0,0,rj);
+							p.Fe = F;
 						}
 
 						float mup = mu * e;
@@ -356,8 +359,6 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 						float3x3 P = mul((2 * mup * (F - R)), transpose(F)) + lambdap * (j - 1) * j ;
 						float3x3 stress = -(_DT * volume) * mul(Dinv , P);
 						float3x3 apic = stress + p.mass * p.C;
-
-						// Set3DZero(apic);
 
 						
 						// j = clamp(j, 0.6f,20.0f);
@@ -451,7 +452,7 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 					float3 vel = _Grid[idx].vel;
 
 					p.velocity += w * vel;
-					p.C +=  Hinv * Outer(w * vel, gpos-p.position);
+					p.C += 4 * Hinv * Outer(w * vel, gpos-p.position);
 				}
 			}
 		}
