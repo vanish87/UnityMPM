@@ -172,24 +172,24 @@ MonoBehaviour:
   cs: {fileID: 7200000, guid: 5b303259b899d0f4492a936ae219b4a9, type: 3}
   m: {fileID: 2100000, guid: 1373c5b085fc0244092791e59ec05b9b, type: 2}
   particleTexture: {fileID: 10300, guid: 0000000000000000f000000000000000, type: 0}
-  type: 2
+  type: 1
   mpmParameter:
     start:
       data: {x: 0, y: 0, z: 0, w: 0}
     dimx:
-      data: 64
+      data: 32
     dimy:
-      data: 64
+      data: 32
     dimz:
-      data: 1
+      data: 16
     h:
       data: 1
     dt:
-      data: 0.005
+      data: 0.004
     ptype:
       data: 0
     E:
-      data: 14000
+      data: 1200
     nu:
       data: 0.2
     hardening:

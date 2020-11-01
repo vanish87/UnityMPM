@@ -59,7 +59,7 @@
 		[unroll]
 		for (int i = 0; i < 4; i++)
 		{
-			float3 position = g_positions[i] * _ParticleSize * In[0].size * 0.5;
+			float3 position = g_positions[i] * _ParticleSize * In[0].size * 0.3;
 			position = mul(_InvViewMatrix, position) + In[0].position;
 			o.position = UnityObjectToClipPos(float4(position, 1.0));
 

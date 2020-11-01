@@ -190,15 +190,16 @@ namespace UnityMPM
 
             if (this.Is2D)
             {
-                this.AddBox(new float3(20, 20, 0), new float3(16, 16, 0), this.type, 0.4f);
-                this.AddBox(new float3(14, 40, 0), new float3(16, 8, 0), this.type, 0.4f);
+                this.AddBox(new float3(20, 20, 0), new float3(16, 16, 0), this.type, 0.8f);
+                this.AddBox(new float3(14, 40, 0), new float3(16, 8, 0), this.type, 0.8f);
                 // this.AddBox(new float3(30, 40, 0), new float3(10, 14, 0), this.type, 1f);
             }
             else
             {
-                this.AddBox(new float3(20, 10, 10), new float3(4, 4, 4), this.type, 1f);
-                this.AddBox(new float3(10, 25, 10), new float3(4, 8, 4), this.type, 1f);
-                this.AddBox(new float3(20, 20, 10), new float3(12, 8, 4), this.type, 1.5f);
+                this.mpmParameter.E.Value *= 0.09f;
+                this.AddBox(new float3(10, 10, 10), new float3(4, 4, 4), this.type, 0.8f);
+                this.AddBox(new float3(10, 25, 10), new float3(8, 3, 4), this.type, 0.8f);
+                // this.AddBox(new float3(20, 20, 10), new float3(12, 8, 4), this.type, 1.5f);
             }
 
             var gsize = this.grid.DataLength;
