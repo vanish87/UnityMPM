@@ -195,7 +195,7 @@ void AddParticles(uint3 DTid : SV_DispatchThreadID)
 	uint newpid = DTid.x;
 
 	ParticleData p = _ParticlesDataBufferRead[idx];
-	p.type = 3;
+	p.type = 1;
 	p.mass = 1;
 	p.volume = 1;
 	p.position = _CPUNewParticles[newpid];
@@ -473,14 +473,14 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 
 			p.Fe = identity;
 			p.Fe[0][0] = Fen1[0][0];
-			p.Fe[1][0] = Fen1[1][0];
 			p.Fe[0][1] = Fen1[0][1];
+			p.Fe[1][0] = Fen1[1][0];
 			p.Fe[1][1] = Fen1[1][1];
 
 			p.Fp = identity;
 			p.Fp[0][0] = Fpn1[0][0];
-			p.Fp[1][0] = Fpn1[1][0];
 			p.Fp[0][1] = Fpn1[0][1];
+			p.Fp[1][0] = Fpn1[1][0];
 			p.Fp[1][1] = Fpn1[1][1];
 		}
 	}

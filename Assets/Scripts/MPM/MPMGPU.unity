@@ -184,9 +184,9 @@ MonoBehaviour:
     h:
       data: 1
     dt:
-      data: 0.003
+      data: 0.01
     E:
-      data: 140000
+      data: 14000
     nu:
       data: 0.2
     hardening:
