@@ -338,20 +338,27 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 						{
 							e = exp(_hardening * (1 - p.Jp));
 						}
-						else
-						if(p.type == 3)
-						{
-							mu = 0;
-							F = float3x3(j,0,0,0,1,0,0,0,1);
-							p.Fe = F;
-						}
+						// else
+						// if(p.type == 3)
+						// {
+						// 	mu = 0;
+						// 	j = p.Jp;
+						// }
 
 						float mup = mu * e;
 						float lambdap = lambda * e;
 
 
 						float3x3 P = mul((2 * mup * (F - R)), transpose(F)) + lambdap * (j - 1) * j ;
+
+						if(p.type == 3)
+						{
+							float s = p.Jp -1;
+							P = float3x3(s,0,0,0,s,0,0,0,s) * mu * 10;
+						}
 						float3x3 stress = -(_DT * volume) * mul(Dinv , P);
+
+						
 						float3x3 apic = stress + p.mass * p.C;
 
 						
@@ -489,13 +496,17 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 		float dl = 1.0f - 2.5e-2f;
 		float du = 1.0f + 4.5e-3f;
 		d = clamp(d, float3(dl,dl,dl), float3(du,du,du));
-		float3x3 D = float3x3(d[0], 0, 0, 0, d[1], 0, 0, 0, d[2]);
-		D[2][2] = 0;
+		float3x3 D = float3x3(d[0], 0, 0, 0, d[1], 0, 0, 0, Is2D()?0:d[2]);
 		
 		float oldj = determinant(F);
 		F = mul(mul(U, D),transpose(V));
 
 		p.Jp = clamp(p.Jp * oldj / determinant(F), 0.6f, 10.0f);
+	}
+	else
+	if(p.type == 3)
+	{
+		p.Jp *= 1 + _DT * (p.C[0][0] + p.C[1][1]);
 	}
 
 	p.Fe = F;
