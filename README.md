@@ -8,6 +8,8 @@ This repository starts from APIC framework, then try to follow original [mpm](ht
 
 It is **under development** and needs optimization and parameter tuning.
 
+Scrennshots are taken on Surface book 2 with GTX1060
+
 - APIC: [The Affine Particle-In-Cell Method](http://www.seas.upenn.edu/~cffjiang/research/apic/paper.pdf)
 - MPM: [The material point method for simulating continuum materials](https://www.seas.upenn.edu/~cffjiang/mpmcourse.html) 
 - MLSMPM: [A Moving Least Squares Material Point Method with Displacement Discontinuity and Two-Way Rigid Body Coupling](https://www.seas.upenn.edu/~cffjiang/research/mlsmpm/hu2018mlsmpm.pdf)
