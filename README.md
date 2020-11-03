@@ -21,9 +21,9 @@ In APIC folder, there are CPU/GPU 2D/3D implementations of APIC framework(no flu
 - White squares are particles.
 - Red spheres are cell mass/velocity that transferred from particles. 
 
-![](/gif/apic2d.gif)
+![](gif/apic2d.gif)
 
-![](/gif/apic3d.gif)
+![](gif/apic3d.gif)
 
 ## MPM
 
@@ -31,11 +31,11 @@ In MPM folder, there are CPU/GPU 2D/3D implementations of MPM. It matches every 
 
 MPMCPU implements "weakly" compressed fluid, snow and elastic material.
 
-![](/gif/mpm2d.gif)
+![](gif/mpm2d.gif)
 
 MPMGPU speeds up a bit.
 
-![](/gif/mpmgpu.gif)
+![](gif/mpmgpu.gif)
 
 ## MLSMPM
 
@@ -43,19 +43,19 @@ Implementation of A Moving Least Squares Material Point Method with Displacement
 
 - Elastic
 
-![](/gif/mlsmpm_elastic.gif)
+![](gif/mlsmpm_elastic.gif)
 
 - Snow
 
-![](/gif/mlsmpm_snow.gif)
+![](gif/mlsmpm_snow.gif)
 
 - Fluid
 
-![](/gif/mlsmpm_fluid.gif)
+![](gif/mlsmpm_fluid.gif)
 
 ### There is also 3D version
 
-![](/gif/mlsmpm_elastic3d.gif)
+![](gif/mlsmpm_elastic3d.gif)
 
 
 
