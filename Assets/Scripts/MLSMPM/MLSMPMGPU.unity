@@ -177,7 +177,7 @@ MonoBehaviour:
     start:
       data: {x: 0, y: 0, z: 0, w: 0}
     dimx:
-      data: 16
+      data: 32
     dimy:
       data: 32
     dimz:
@@ -185,7 +185,7 @@ MonoBehaviour:
     h:
       data: 1
     dt:
-      data: 0.01
+      data: 0.004
     ptype:
       data: 0
     E:
