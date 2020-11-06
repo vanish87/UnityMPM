@@ -180,17 +180,17 @@ MonoBehaviour:
     dimy:
       data: 32
     dimz:
-      data: 1
+      data: 16
     h:
       data: 1
     dt:
       data: 0.01
     E:
-      data: 14000
+      data: 1200
     nu:
       data: 0.2
     hardening:
-      data: 12
+      data: 10
     mu:
       data: 0
     lambda:

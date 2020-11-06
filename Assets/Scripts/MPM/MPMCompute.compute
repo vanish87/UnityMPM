@@ -69,7 +69,7 @@ void AddParticles(uint3 DTid : SV_DispatchThreadID)
 	uint newpid = DTid.x;
 
 	ParticleData p = _ParticlesDataBufferRead[idx];
-	p.type = 1;
+	p.type = 2;
 	p.mass = 1;
 	p.volume = 1;
 	p.position = _CPUNewParticles[newpid];
@@ -166,7 +166,7 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 						float3 wd = GetWeightGradient(p.position, delta);
 
 
-						float3x3 F = float3x3(p.Fe[0][0], p.Fe[0][1],0, p.Fe[1][0], p.Fe[1][1],0,0,0,1);
+						float3x3 F = p.Fe;
 						float3x3 R = 0;
 						float j = determinant(F);
 						float volume = p.volume;
@@ -196,8 +196,6 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 						{
 							float3x3 S = 0;
 							GetPolarDecomposition2D(F, R, S);
-
-							R[2][2] = S[2][2] = 1;
 						}
 						else
 						{
@@ -320,8 +318,8 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 	{
 		if(Is2D())
 		{
-			float2x2 F2d = float2x2(F[0][0],F[0][1],F[1][0],F[1][1]);
-			float2x2 Fp2d = float2x2(p.Fp[0][0],p.Fp[0][1],p.Fp[1][0],p.Fp[1][1]);
+			float2x2 F2d = To2D(F);
+			float2x2 Fp2d = To2D(p.Fp);
 			float2x2 U;
 			float2 d;
 			float2x2 V;
@@ -334,19 +332,32 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 			float2x2 Fpn1 = mul(F2d, Fp2d);
 			float2x2 Fen1 = mul(mul(U, D),transpose(V));
 			Fpn1 = mul(mul(mul(V, inverse(D)), transpose(U)), Fpn1);
-
-			p.Fe = Identity3x3;
-			p.Fe[0][0] = Fen1[0][0];
-			p.Fe[0][1] = Fen1[0][1];
-			p.Fe[1][0] = Fen1[1][0];
-			p.Fe[1][1] = Fen1[1][1];
-
-			p.Fp = Identity3x3;
-			p.Fp[0][0] = Fpn1[0][0];
-			p.Fp[0][1] = Fpn1[0][1];
-			p.Fp[1][0] = Fpn1[1][0];
-			p.Fp[1][1] = Fpn1[1][1];
+			
+			p.Fe = To3D(Fen1);
+			p.Fp = To3D(Fpn1);
+			p.Fe[2][2] = p.Fp[2][2] = 0;
 		}
+		else
+		{
+			float3x3 Fp = p.Fp;
+			float3x3 U;
+			float3 d;
+			float3x3 V;
+			GetSVD3D(F, U, d, V);
+			float dl = 1.0f - 2.5e-2f;
+			float du = 1.0f + 7.5e-3f;
+			d = clamp(d, float3(dl,dl,dl), float3(du,du,du));
+			float3x3 D = ToIdentity(d);
+
+			float3x3 Fpn1 = mul(F, Fp);
+			float3x3 Fen1 = mul(mul(U, D),transpose(V));
+			Fpn1 = mul(mul(mul(V, inverse(D)), transpose(U)), Fpn1);
+
+			p.Fe = Fen1;
+			p.Fp = Fpn1;
+
+		}
+		
 	}
 	else
 	{
