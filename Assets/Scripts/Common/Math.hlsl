@@ -46,6 +46,11 @@ float3x3 ToIdentity(float3 diagnal)
 {
 	return float3x3(diagnal[0],0,0,0,diagnal[1],0,0,0,diagnal[2]);
 }
+float3x3 ToIdentity(float diagnal)
+{
+	return float3x3(diagnal,0,0,0,diagnal,0,0,0,diagnal);
+}
+
 float2x2 ToIdentity(float2 diagnal)
 {
 	return float2x2(diagnal[0],0,0,diagnal[1]);

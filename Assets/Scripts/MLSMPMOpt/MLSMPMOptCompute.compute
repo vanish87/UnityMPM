@@ -1,0 +1,373 @@
+﻿
+
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel InitParticle
+
+
+#pragma kernel AddParticles
+#pragma kernel CalGridDensity
+#pragma kernel UpdateParticleVolume
+
+#pragma kernel InitGrid
+#pragma kernel P2G
+#pragma kernel UpdateGrid
+#pragma kernel G2P
+
+#include "GPUData.cginc"
+#include "Assets/Scripts/Common/Constant.hlsl"
+#include "Assets/Scripts/Common/Grid.hlsl"
+#include "Assets/Scripts/Common/Math.hlsl"
+#include "Assets/Scripts/Common/SVD.hlsl"
+
+#define GTHREAD_SIZE 32
+#define PTHREAD_SIZE 256
+
+cbuffer cb
+{
+    int _NumberOfParticles;
+    int _ActiveNumberOfParticles;
+
+	float _DT;
+};
+
+
+cbuffer mpm
+{
+	float _E;
+	float _nu;
+	float _mu;
+	float _lambda;
+	float _hardening;
+	int _ParticleType;
+}
+
+RWStructuredBuffer<ParticleData> _ParticlesDataBufferRead;
+//Not used
+RWStructuredBuffer<ParticleData> _ParticlesDataBufferWrite;
+RWStructuredBuffer<ParticleData> _ParticlesDataBufferEmitWrite;
+
+AppendStructuredBuffer<uint> _ParticlesIndexBufferActive;
+ConsumeStructuredBuffer<uint> _ParticlesIndexBufferDead;
+
+AppendStructuredBuffer<uint> _ParticlesIndexBufferInit;
+
+RWStructuredBuffer<CellData> _Grid;
+
+StructuredBuffer<float3> _CPUNewParticles;
+
+
+
+[numthreads(PTHREAD_SIZE,1,1)]
+void InitParticle(uint3 DTid : SV_DispatchThreadID)
+{
+	uint idx = DTid.x;
+
+	_ParticlesDataBufferRead[idx].position = float3(0,0,0);
+	_ParticlesDataBufferRead[idx].type = 0;
+
+	_ParticlesIndexBufferInit.Append(idx);
+}
+[numthreads(1,1,1)]
+void AddParticles(uint3 DTid : SV_DispatchThreadID)
+{
+	uint idx = _ParticlesIndexBufferDead.Consume();
+	uint newpid = DTid.x;
+
+	ParticleData p = _ParticlesDataBufferRead[idx];
+	p.type = _ParticleType;
+	p.mass = 1;
+	p.volume = 1;
+	p.position = _CPUNewParticles[newpid];
+	p.velocity = float3(0, 0, 0);
+	p.C = 0;
+	p.Fe = Is2D()?Identity3x32D:Identity3x3;
+	p.Jp = 1;
+
+	_ParticlesDataBufferEmitWrite[idx] = p;
+}
+[numthreads(GTHREAD_SIZE,1,1)]
+void CalGridDensity(uint3 DTid : SV_DispatchThreadID)
+{
+	float volume =  _H*_H*_H;
+	uint idx = DTid.x;
+	CellData c = _Grid[idx];
+	c.mass /= volume;
+	_Grid[idx] = c;
+}
+[numthreads(PTHREAD_SIZE, 1, 1)]
+void UpdateParticleVolume(uint3 DTid : SV_DispatchThreadID)
+{
+	const uint pid = DTid.x;
+	ParticleData p = _ParticlesDataBufferRead[pid];
+	if(!p.type) return;
+
+	float density = 0;
+	int3 gidx = PPosToCIndex(p.position);
+	for (int gx = -1; gx <= 1; ++gx)
+	{
+		for (int gy = -1; gy <= 1; ++gy)
+		{
+			for(int gz = -1; gz <=1; ++gz)
+			{
+				int3 delta = int3(gx,gy,gz);
+				int3 cid = gidx + delta;
+
+				uint idx = CIndexToCDIndex(cid);
+
+				if (InGrid(cid))
+				{
+					float3 gpos = CIndexToCPos(cid);
+					float w = GetWeight(p.position, delta);
+
+					density += _Grid[idx].mass * w;
+				}
+			}
+		}
+	}
+
+	p.volume = p.mass/density;
+	_ParticlesDataBufferRead[pid] = p;
+}
+[numthreads(GTHREAD_SIZE,1,1)]
+void InitGrid(uint3 DTid : SV_DispatchThreadID)
+{
+	uint idx = DTid.x;
+	CellData c = _Grid[idx];
+	c.mass = 0;
+	c.mv = 0;
+	c.force = 0;
+	c.vel = 0;
+	_Grid[idx] = c;
+}
+[numthreads(GTHREAD_SIZE,1,1)]
+void P2G (uint3 DTid : SV_DispatchThreadID)
+{
+    const uint CellID = DTid.x;
+	CellData c = _Grid[CellID];
+	[loop]
+	for (int pi = 0; pi < _NumberOfParticles; ++pi)
+	{
+        ParticleData p = _ParticlesDataBufferRead[pi];
+		if(!p.type) continue;
+
+        int3 gidx = PPosToCIndex(p.position);
+        for (int gx = -1; gx <= 1; ++gx)
+        {
+            for (int gy = -1; gy <= 1; ++gy)
+			{
+				for(int gz = -1; gz <=1; ++gz)
+				{
+					int3 delta = int3(gx,gy,gz);
+					int3 cid = gidx + delta;
+
+					uint idx = CIndexToCDIndex(cid);
+					if(CellID != idx) continue;
+
+					if (InGrid(cid))
+					{
+						float3 gpos = CIndexToCPos(cid);
+						float w = GetWeight(p.position, delta);
+
+						float3x3 F = p.Fe;
+						float3x3 R = 0;
+						float3x3 U ;
+						float3 d;
+						float3x3 V;
+
+						float volume = p.volume;
+						float3x3 Dinv = InvD();
+						
+
+						if(Is2D())
+						{
+							float3x3 S = 0;
+							GetPolarDecomposition2D(F, R, S);
+						}
+						else
+						{
+							GetSVD3D(F, U, d, V);
+							R = mul(U, transpose(V));
+						}
+
+
+
+						float e = 1;
+						float mu = _mu;
+						float lambda = _lambda;
+
+						float j = determinant(F);
+						if(p.type == 2)
+						{
+							e = exp(_hardening * (1 - p.Jp));
+						}
+						// else
+						// if(p.type == 3)
+						// {
+						// 	mu = 0;
+						// 	j = p.Jp;
+						// }
+
+						float mup = mu * e;
+						float lambdap = lambda * e;
+
+
+						float3x3 P = mul((2 * mup * (F - R)), transpose(F)) + lambdap * (j - 1) * j ;
+
+						if(p.type == 3)
+						{
+							float s = p.Jp -1;
+							P = ToIdentity(s) * mu * 10;
+						}
+						float3x3 stress = -(_DT * volume) * mul(Dinv , P);
+
+						
+						float3x3 apic = stress + p.mass * p.C;
+
+						
+						// j = clamp(j, 0.6f,20.0f);
+						// float3x3 FinvT = transpose(inverse(F));
+						// float3x3 P = (2.0f * mup * (F - R)) + lambdap * (j - 1.0f) * j * FinvT;
+						// float3x3 stress = 1.0f / j * mul(P, transpose(F));
+
+						c.mass += w * p.mass;
+						c.mv += w * (p.mass * p.velocity + mul(apic, (gpos-p.position)));
+						// c.force += -volume * mul(stress, wd);
+					}
+				}
+			}
+		}
+	}
+	_Grid[CellID] = c;
+
+}
+
+[numthreads(GTHREAD_SIZE,1,1)]
+void UpdateGrid(uint3 DTid : SV_DispatchThreadID)
+{
+	const uint CellID = DTid.x;
+    CellData c = _Grid[CellID];
+
+	uint3 cidx = CDIndexToCIndex(CellID);
+
+    if (c.mass <= 0)
+    {
+		c.force = 0;
+        c.mass = 0;
+        c.mv = 0;
+        c.vel = 0;
+    }
+    else
+    {
+        c.vel = c.mv / c.mass;
+
+        float3 g = float3(0.0f,-9.8f, 0.0f);
+        c.vel += _DT * (c.force / c.mass + g);
+        if (cidx.x < 2 || cidx.x >= _DimX - 2) c.vel.x = 0;
+        if (cidx.y < 2 || cidx.y >= _DimY - 2) c.vel.y = 0;
+        if (cidx.z < 2 || cidx.z >= _DimZ - 2) c.vel.z = 0;
+    }
+    
+
+    _Grid[CellID] = c;
+
+}
+float3x3 Outer(float3 u, float3 v)
+{
+	if(Is2D())
+	{
+		return float3x3(u[0]*v[0], u[0]*v[1],0,
+						u[1]*v[0], u[1]*v[1],0,
+						0,0,0);
+	}
+	else
+	{
+		return float3x3(u[0]*v[0], u[0]*v[1],u[0]*v[2],
+						u[1]*v[0], u[1]*v[1],u[1]*v[2],
+						u[2]*v[0], u[2]*v[1],u[2]*v[2]);
+	}
+}
+
+[numthreads(PTHREAD_SIZE, 1, 1)]
+void G2P(uint3 DTid : SV_DispatchThreadID)
+{
+	const uint pid = DTid.x;
+	ParticleData p = _ParticlesDataBufferRead[pid];
+	if(!p.type) return;
+	
+    p.velocity = 0;
+    p.C = 0;
+	float Hinv = 1.0f/_H;
+
+	int3 gidx = PPosToCIndex(p.position);
+	for (int gx = -1; gx <= 1; ++gx)
+	{
+		for (int gy = -1; gy <= 1; ++gy)
+		{
+			for(int gz = -1; gz <=1; ++gz)
+			{
+				int3 delta = int3(gx,gy,gz);
+				int3 cid = gidx + delta;
+				int idx = CIndexToCDIndex(cid);
+				if (InGrid(cid))
+				{
+					float3 gpos = CIndexToCPos(cid);
+					float w = GetWeight(p.position, delta);
+					float3 vel = _Grid[idx].vel;
+
+					p.velocity += w * vel;
+					p.C += 4 * Hinv * Outer(w * vel, gpos-p.position);
+				}
+			}
+		}
+	}
+
+    p.position += _DT * p.velocity;
+    p.position = clamp(p.position, _Start.xyz, float3(_DimX,_DimY,_DimZ) * _H);
+
+    float3x3 F = p.Fe;
+    F = mul(Identity3x3 + _DT * p.C, F);
+
+	if(p.type == 2)
+	{
+		float3x3 U ;
+		float3 d;
+		float3x3 V;
+
+		if(Is2D())
+		{
+			float2x2 F2d = To2D(F);
+			float2x2 U2d = 0;
+			float2 d2d = 0;
+			float2x2 V2d = 0;
+			GetSVD2D(F2d, U2d, d2d, V2d);
+
+			U = To3D(U2d);
+			d = float3(d2d[0], d2d[1], 0);
+			V = To3D(V2d);
+		}
+		else
+		{
+			GetSVD3D(F, U, d, V);
+		}
+
+		float dl = 1.0f - 2.5e-2f;
+		float du = 1.0f + 4.5e-3f;
+		d = clamp(d, float3(dl,dl,dl), float3(du,du,du));
+		float3x3 D = float3x3(d[0], 0, 0, 0, d[1], 0, 0, 0, Is2D()?0:d[2]);
+		
+		float oldj = determinant(F);
+		F = mul(mul(U, D),transpose(V));
+
+		p.Jp = clamp(p.Jp * oldj / determinant(F), 0.6f, 10.0f);
+	}
+	else
+	if(p.type == 3)
+	{
+		p.Jp *= 1 + _DT * (p.C[0][0] + p.C[1][1]);
+	}
+
+	p.Fe = F;
+
+	_ParticlesDataBufferRead[pid] = p;
+
+}
