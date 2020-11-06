@@ -14,10 +14,11 @@
 #pragma kernel G2P
 
 #include "GPUData.cginc"
-#include "Math.cginc"
+#include "Assets/Scripts/Common/Constant.hlsl"
+#include "Assets/Scripts/Common/Grid.hlsl"
+#include "Assets/Scripts/Common/Math.hlsl"
+#include "Assets/Scripts/Common/SVD.hlsl"
  
-static const float3x3 identity = float3x3(1,0,0,0,1,0,0,0,1);
-
 cbuffer cb
 {
     int _NumberOfParticles;
@@ -26,14 +27,6 @@ cbuffer cb
 	float _DT;
 };
 
-cbuffer grid
-{
-	float4 _Start;
-	uint _DimX;
-	uint _DimY;
-	uint _DimZ;
-	float _H;
-}
 
 cbuffer mpm
 {
@@ -59,125 +52,6 @@ RWStructuredBuffer<CellData> _Grid;
 StructuredBuffer<float3> _CPUNewParticles;
 
 
-float N(float x)
-{
-    x = abs(x);
-
-    if (x < 0.5f) return 0.75f - x * x;
-    if (x < 1.5f) return 0.5f * (1.5f - x) * (1.5f - x);
-    return 0;
-}
-
-float DevN(float x)
-{
-    float absx = abs(x);
-    if (absx < 0.5f) return -2 * x;
-    if (absx < 1.5f) return x > 0 ? absx - 1.5f : -(absx - 1.5f);
-    return 0;
-}
-
-float3x3 InvD()
-{
-	return 4.0f * identity * _H * _H;
-}
-
-bool is2D()
-{
-	return _DimZ == 1;
-}
-// void Set3DZero(inout float3x3 mat)
-// {
-// 	mat[2] = mat[0][2] = mat[1][2] = 0;
-// }
-
-uint3 PPosToCIndex(float3 pos)
-{
-	return uint3(pos-_Start.xyz);
-}
-
-uint CIndexToCDIndex(uint3 idx)
-{
-	return idx.x + idx.y * _DimX + idx.z * _DimX * _DimY;
-}
-
-uint3 CDIndexToCIndex(uint idx)
-{
-	uint z = idx/(_DimX * _DimY);
-	uint xy = idx%(_DimX * _DimY);
-
-	return uint3(xy%_DimX, xy/_DimX, z);
-}
-
-float3 CIndexToCPos(uint3 idx)
-{
-	return _Start.xyz + (idx + 0.5f) * _H;
-}
-
-bool InGrid(uint3 idx)
-{
-	uint cdid = CIndexToCDIndex(idx);
-	return 0<= cdid && cdid < _DimX * _DimY *_DimZ;
-}
-float GetWeight(float3 pos, int3 delta)
-{
-	int3 gindex = PPosToCIndex(pos) + delta;
-	if (!InGrid(gindex)) return 0;
-
-	float3 gpos = CIndexToCPos(gindex);
-	float3 dis = pos - gpos;
-	float3 invH = 1.0f / _H;
-	dis *= invH;
-
-	return  N(dis.x) * N(dis.y) *(is2D()?1: N(dis.z));
-}
-float3 GetWeightGradient(float3 pos, int3 delta)
-{
-	int3 gindex = PPosToCIndex(pos) + delta;
-	if (!InGrid(gindex)) return 0;
-
-	float3 gpos = CIndexToCPos(gindex);
-	float3 dis = pos - gpos;
-	float3 invH = 1.0f / _H;
-	dis *= invH;
-
-	float wx = N(dis.x);
-	float wy = N(dis.y);
-	float wz = is2D()?1:N(dis.z);
-
-	float wdx = DevN(dis.x);
-	float wdy = DevN(dis.y);
-	float wdz = is2D()?0:DevN(dis.z);
-
-	return invH * float3(wdx * wy * wz, wx * wdy * wz, wx * wy * wdz);
-}
-float2x2 inverse(float2x2 m)
-{
-    return 1.0f / determinant(m) *
-					float2x2(
-						 m[0][0], -m[0][1], 
-						-m[1][0],  m[0][0]
-					);
-}
-
-float3x3 inverse(float3x3 m)
-{
-	return 1.0f / determinant(m) *
-                    float3x3(
-                          m[1][1] * m[2][2] - m[1][2] * m[2][1],
-                        -(m[0][1] * m[2][2] - m[0][2] * m[2][1]),
-                          m[0][1] * m[1][2] - m[0][2] * m[1][1],
-						  
-                        -(m[1][0] * m[2][2] - m[1][2] * m[2][0]),
-                          m[0][0] * m[2][2] - m[0][2] * m[2][0],
-                        -(m[0][0] * m[1][2] - m[0][2] * m[1][0]),
-						
-                          m[1][0] * m[2][1] - m[1][1] * m[2][0],
-                        -(m[0][0] * m[2][1] - m[0][1] * m[2][0]),
-                          m[0][0] * m[1][1] - m[0][1] * m[1][0]
-                    );
-}
-
-
 [numthreads(8,1,1)]
 void InitParticle(uint3 DTid : SV_DispatchThreadID)
 {
@@ -199,11 +73,11 @@ void AddParticles(uint3 DTid : SV_DispatchThreadID)
 	p.mass = 1;
 	p.volume = 1;
 	p.position = _CPUNewParticles[newpid];
-	p.velocity = float3(0, 0, 0);
+	p.velocity = 0;
 	p.B = 0;
-	p.D = identity;
-	p.Fe = identity;
-	p.Fp = identity;
+	p.D = 0;
+	p.Fe = Identity3x3;
+	p.Fp = Identity3x3;
 
 	_ParticlesDataBufferEmitWrite[idx] = p;
 }
@@ -292,8 +166,8 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 						float3 wd = GetWeightGradient(p.position, delta);
 
 
-						float3x3 F = p.Fe;
-						float3x3 R = identity;
+						float3x3 F = float3x3(p.Fe[0][0], p.Fe[0][1],0, p.Fe[1][0], p.Fe[1][1],0,0,0,1);
+						float3x3 R = 0;
 						float j = determinant(F);
 						float volume = p.volume;
 						float3x3 Dinv = InvD();
@@ -318,16 +192,12 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 						float mup = mu * e;
 						float lambdap = lambda * e;
 
-						if(is2D())
+						if(Is2D())
 						{
-							float2x2 F2d = float2x2(F[0][0], F[0][1], F[1][0], F[1][1]);
-							float2x2 R2d = 0;
-							float2x2 S = 0;
-							GetPolarDecomposition2D(F2d, R2d, S);
+							float3x3 S = 0;
+							GetPolarDecomposition2D(F, R, S);
 
-							R = float3x3(R2d[0][0], R2d[0][1], 0,
-										R2d[1][0], R2d[1][1], 0,
-										0,0,1);
+							R[2][2] = S[2][2] = 1;
 						}
 						else
 						{
@@ -335,16 +205,10 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 							float3 d;
 							float3x3 V;
 
-							//Note: 3D is not tested on CPU and is very slow for real time 
 							GetSVD3D(F, U, d, V);
 							float3x3 D = float3x3(d[0], 0, 0, 0, d[1], 0, 0, 0, d[2]);
 							R = mul(U, transpose(V));
 						}
-
-
-						// float3x3 P = mul((2 * mup * (F - R)), transpose(F)) + lambdap * (j - 1) * j ;
-						// float3x3 stress = 1.0f/j*mul(P,transpose(F));
-
 						
 						j = clamp(j, 0.6f,20.0f);
 						float3x3 FinvT = transpose(inverse(F));
@@ -354,6 +218,7 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 						c.mass += w * p.mass;
 						c.mv += w * p.mass * (p.velocity + mul(apic, (gpos-p.position)));
 						c.force += -volume * mul(stress, wd);
+
 					}
 				}
 			}
@@ -395,20 +260,19 @@ void UpdateGrid(uint3 DTid : SV_DispatchThreadID)
 }
 float3x3 Outer(float3 u, float3 v)
 {
-	if(is2D())
-	{
-		return float3x3(u[0]*v[0], u[0]*v[1],0,
-						u[1]*v[0], u[1]*v[1],0,
-						0,0,0);
-	}
-	else
-	{
-		return float3x3(u[0]*v[0], u[0]*v[1],u[0]*v[2],
-						u[1]*v[0], u[1]*v[1],u[1]*v[2],
-						u[2]*v[0], u[2]*v[1],u[2]*v[2]);
-	}
+    if(Is2D())
+    {
+        return float3x3(u[0]*v[0], u[0]*v[1],0,
+                        u[1]*v[0], u[1]*v[1],0,
+                        0,0,0);
+    }
+    else
+    {
+        return float3x3(u[0]*v[0], u[0]*v[1],u[0]*v[2],
+                        u[1]*v[0], u[1]*v[1],u[1]*v[2],
+                        u[2]*v[0], u[2]*v[1],u[2]*v[2]);
+    }
 }
-
 [numthreads(32, 1, 1)]
 void G2P(uint3 DTid : SV_DispatchThreadID)
 {
@@ -438,9 +302,9 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 					float3 vel = _Grid[idx].vel;
 
 					p.velocity += w * vel;
-					p.B += w * Outer(vel, gpos-p.position);
 
-					sum+=Outer(vel,wd);
+					p.B += w * (Is2D()?Math_OuterProduct2D(vel, gpos-p.position):Math_OuterProduct(vel, gpos-p.position));
+					sum += Is2D()?Math_OuterProduct2D(vel, wd):Math_OuterProduct(vel, wd);
 
 				}
 			}
@@ -451,10 +315,10 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
     p.position = clamp(p.position, _Start.xyz, float3(_DimX,_DimY,_DimZ) * _H);
 
     float3x3 F = p.Fe;
-    F = mul(identity + _DT * sum, F);
+    F = mul(Identity3x3 + _DT * sum, F);
 	if(p.type == 2)
 	{
-		if(is2D())
+		if(Is2D())
 		{
 			float2x2 F2d = float2x2(F[0][0],F[0][1],F[1][0],F[1][1]);
 			float2x2 Fp2d = float2x2(p.Fp[0][0],p.Fp[0][1],p.Fp[1][0],p.Fp[1][1]);
@@ -471,13 +335,13 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 			float2x2 Fen1 = mul(mul(U, D),transpose(V));
 			Fpn1 = mul(mul(mul(V, inverse(D)), transpose(U)), Fpn1);
 
-			p.Fe = identity;
+			p.Fe = Identity3x3;
 			p.Fe[0][0] = Fen1[0][0];
 			p.Fe[0][1] = Fen1[0][1];
 			p.Fe[1][0] = Fen1[1][0];
 			p.Fe[1][1] = Fen1[1][1];
 
-			p.Fp = identity;
+			p.Fp = Identity3x3;
 			p.Fp[0][0] = Fpn1[0][0];
 			p.Fp[0][1] = Fpn1[0][1];
 			p.Fp[1][0] = Fpn1[1][0];

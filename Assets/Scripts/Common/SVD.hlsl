@@ -1,7 +1,9 @@
-﻿#ifndef MATH_INCLUDED
-#define MATH_INCLUDED
+﻿#ifndef SVD_INCLUDED
+#define SVD_INCLUDED
 
 #define EPSILON 1.19209e-07
+
+#include "Math.hlsl"
 
 float2x2 G2(float c, float s)
 {
@@ -113,6 +115,18 @@ void GetPolarDecomposition2D(in float2x2 A, out float2x2 R, out float2x2 S)
 	}
 
 	S = mul(transpose(R), A);
+}
+
+//helper function to cal polar2d in float3x3 matrix
+void GetPolarDecomposition2D(in float3x3 F, out float3x3 R, out float3x3 S)
+{
+	float2x2 F2d = To2D(F);
+	float2x2 R2d = 0;
+	float2x2 S2d = 0;
+	GetPolarDecomposition2D(F2d, R2d, S2d);
+
+	R = To3D(R2d);
+	S = To3D(S2d);
 }
 
 
@@ -444,6 +458,7 @@ void PostProcess(float3x3 B, inout float3x3 U, inout float3x3 V, float3 alpha, f
 }
 
 
+
 void GetSVD3D(in float3x3 A, out float3x3 U, out float3 D, out float3x3 V)
 {
 	U = float3x3(1, 0, 0,
@@ -504,67 +519,17 @@ void GetSVD3D(in float3x3 A, out float3x3 U, out float3 D, out float3x3 V)
 	PostProcess(B, U, V, alpha, beta, D, tao);
 }
 
-
-
-inline float GetBSplineHelper(const float value)
+void GetSVD3D(in float2x2 A, out float2x2 U, out float2 D, out float2x2 V)
 {
-	float val = abs(value);
-	float ret = 0;
-	if (val < 1)
-	{
-		ret = (0.5f * val * val * val) - (val * val) + (2 / 3.0f);
-	}
-	else
-		if (val < 2)
-		{
-			ret = (-1 / 6.0f) * (val * val * val) + (val *val) - (2 * val) + (4 / 3.0f);
-		}
-		else
-		{
-			return 0;
-		}
+	float3x3 F3d = To3D(A);
+	float3x3 U3d = 0;
+	float3 D3d = 0;
+	float3x3 V3d = 0;
 
-	//if (ret < 1e-4f) 
-	//	return 0;
+	GetSVD3D(F3d, U3d, D3d, V3d);
 
-	return ret;
+	U = To2D(U3d);
+	D = float2(D3d[0], D3d[1]);
+	V = To2D(V3d);
 }
-
-inline float GetBSplineDerivativeHelper(float value)
-{
-	float val = abs(value);
-	if (val < 1)
-	{
-		return (1.5f * val * value) - 2 * value;
-	}
-	else
-		if (value < 2)
-		{
-			return (-0.5f) * (val * value) + 2 * value - 2 * value / val;
-		}
-		else
-		{
-			return 0;
-		}
-}
-
-float3x3 Math_OutProduct(float3 lhs, float3 rhs)
-{
-	return float3x3(lhs[0] * rhs[0], lhs[0] * rhs[1], lhs[0] * rhs[2],
-					lhs[1] * rhs[0], lhs[1] * rhs[1], lhs[1] * rhs[2],
-					lhs[2] * rhs[0], lhs[2] * rhs[1], lhs[2] * rhs[2]);
-}
-
-
-float3 Math_GetBSpline(float3 value)
-{
-	return float3(GetBSplineHelper(value.x), GetBSplineHelper(value.y), GetBSplineHelper(value.z));
-}
-
-
-float3 Math_GetBSplineDerivative(float3 value)
-{
-	return float3(GetBSplineDerivativeHelper(value.x), GetBSplineDerivativeHelper(value.y), GetBSplineDerivativeHelper(value.z));
-}
-
 #endif

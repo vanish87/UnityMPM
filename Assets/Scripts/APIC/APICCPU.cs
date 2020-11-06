@@ -99,8 +99,9 @@ namespace UnityMPM
                     c.vel = c.mv / c.mass;
                     var g = new float3(0f, -9.8f, 0);
                     c.vel += dt * (c.force / c.mass + g);
-                    if (x < 2 || x > this.grid.Dim.x - 2) c.vel.x = 0;
-                    if (y < 2 || y > this.grid.Dim.y - 2) c.vel.y = 0;
+                    if (x < 2 || x >= this.grid.Dim.x - 2) c.vel.x = 0;
+                    if (y < 2 || y >= this.grid.Dim.y - 2) c.vel.y = 0;
+                    if (z < 2 || z >= this.grid.Dim.z - 2) c.vel.z = 0;
                 }
             }
 

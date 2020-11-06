@@ -1,9 +1,5 @@
 ﻿
-
-// Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel InitParticle
-
-
 #pragma kernel AddParticles
 
 #pragma kernel InitGrid
@@ -12,6 +8,8 @@
 #pragma kernel G2P
 
 #include "GPUData.cginc"
+#include "Assets/Scripts/Common/Math.hlsl"
+#include "Assets/Scripts/Common/Grid.hlsl"
 
 
 static const float3x3 identity = float3x3(1,0,0,0,1,0,0,0,1);
@@ -23,15 +21,6 @@ cbuffer cb
 
 	float _DT;
 };
-
-cbuffer grid
-{
-	float4 _Start;
-	uint _DimX;
-	uint _DimY;
-	uint _DimZ;
-	float _H;
-}
 
 RWStructuredBuffer<ParticleData> _ParticlesDataBufferRead;
 //Not used
@@ -87,68 +76,6 @@ void InitGrid(uint3 DTid : SV_DispatchThreadID)
 	_Grid[idx] = c;
 }
 
-float N(float x)
-{
-    x = abs(x);
-
-    if (x < 0.5f) return 0.75f - x * x;
-    if (x < 1.5f) return 0.5f * (1.5f - x) * (1.5f - x);
-    return 0;
-}
-
-float DevN(float x)
-{
-    float absx = abs(x);
-    if (absx < 0.5f) return -2 * x;
-    if (absx < 1.5f) return x > 0 ? absx - 1.5f : -(absx - 1.5f);
-    return 0;
-}
-
-float3x3 InvD()
-{
-	return 4.0f * identity * _H * _H;
-}
-
-uint3 PPosToCIndex(float3 pos)
-{
-	return uint3(pos-_Start.xyz);
-}
-
-uint CIndexToCDIndex(uint3 idx)
-{
-	return idx.x + idx.y * _DimX + idx.z * _DimX * _DimY;
-}
-
-uint3 CDIndexToCIndex(uint idx)
-{
-	uint z = idx/(_DimX * _DimY);
-	uint xy = idx%(_DimX * _DimY);
-
-	return uint3(xy%_DimX, xy/_DimX, z);
-}
-
-float3 CIndexToCPos(uint3 idx)
-{
-	return _Start.xyz + (idx + 0.5f) * _H;
-}
-
-bool InGrid(uint3 idx)
-{
-	uint cdid = CIndexToCDIndex(idx);
-	return 0<= cdid && cdid < _DimX * _DimY *_DimZ;
-}
-float GetWeight(float3 pos, int3 delta)
-{
-	int3 gindex = PPosToCIndex(pos) + delta;
-	if (!InGrid(gindex)) return 0;
-
-	float3 gpos = CIndexToCPos(gindex);
-	float3 dis = pos - gpos;
-	float3 invH = 1.0f / _H;
-	dis *= invH;
-
-	return  N(dis.x) * N(dis.y) * N(dis.z);
-}
 
 [numthreads(8,1,1)]
 void P2G (uint3 DTid : SV_DispatchThreadID)
@@ -160,7 +87,6 @@ void P2G (uint3 DTid : SV_DispatchThreadID)
 	{
         ParticleData p = _ParticlesDataBufferRead[pi];
 		if(!p.active) continue;
-        // float2x2 apic = mul(p.B, inverse(p.D));
         float3x3 apic = mul(p.B, InvD());
 
         int3 gidx = PPosToCIndex(p.position);
@@ -222,14 +148,6 @@ void UpdateGrid (uint3 DTid : SV_DispatchThreadID)
     _Grid[CellID] = c;
 
 }
-float3x3 Outer(float3 u, float3 v)
-{
-	return float3x3(u[0]*v[0], u[0]*v[1],u[0]*v[2],
-					u[1]*v[0], u[1]*v[1],u[1]*v[2],
-					u[2]*v[0], u[2]*v[1],u[2]*v[2]);
-
-
-}
 
 [numthreads(8, 1, 1)]
 void G2P(uint3 DTid : SV_DispatchThreadID)
@@ -238,7 +156,6 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 	ParticleData p = _ParticlesDataBufferRead[pid];
 	if(!p.active) return;
 	
-    // float2x2 sum = 0;
     p.velocity = 0;
     p.B = 0;
 
@@ -260,9 +177,7 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 					float3 vel = _Grid[idx].vel;
 
 					p.velocity += w * vel;
-					p.B += w * Outer(vel, gpos-p.position);
-
-					// sum+=Outer(vel,wd);
+					p.B += w * Math_OuterProduct(vel, gpos-p.position);
 				}
 			}
 		}
