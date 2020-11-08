@@ -18,6 +18,8 @@ Screenshots are taken on Surface book 2 with GTX1060
 
 ![](gif/mpmopt1.gif)
 
+![](gif/mpmopt3d.gif)
+
 ## APIC
 
 In APIC folder, there are CPU/GPU 2D/3D implementations of APIC framework(no fluid). 
