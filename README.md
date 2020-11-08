@@ -14,6 +14,8 @@ Screenshots are taken on Surface book 2 with GTX1060
 - MPM: [The material point method for simulating continuum materials](https://www.seas.upenn.edu/~cffjiang/mpmcourse.html) 
 - MLSMPM: [A Moving Least Squares Material Point Method with Displacement Discontinuity and Two-Way Rigid Body Coupling](https://www.seas.upenn.edu/~cffjiang/research/mlsmpm/hu2018mlsmpm.pdf)
 
+(First play may be lagging in fps due to large gif downloading)
+
 ![](gif/mpmopt.gif)
 
 ![](gif/mpmopt1.gif)
