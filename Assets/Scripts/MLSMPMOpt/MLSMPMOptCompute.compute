@@ -21,7 +21,7 @@
 
 #define GTHREAD_SIZE 32
 #define PTHREAD_SIZE 256
-#define GRID_SHARED_GROUP_SIZE 128
+#define GRID_SHARED_GROUP_SIZE 256
 
 cbuffer cb
 {
@@ -81,9 +81,10 @@ void AddParticles(uint3 DTid : SV_DispatchThreadID)
 	p.position = _CPUNewParticles[newpid];
 	p.velocity = float3(0, 0, 0);
 	p.C = 0;
-	p.U = Is2D()?Identity3x32D:Identity3x3;
-	p.D = 1;
-	p.V = Is2D()?Identity3x32D:Identity3x3;
+	// p.U = Is2D()?Identity3x32D:Identity3x3;
+	// p.D = 1;
+	// p.V = Is2D()?Identity3x32D:Identity3x3;
+	p.F = Is2D()?Identity3x32D:Identity3x3;
 
 	_ParticlesDataBufferEmitWrite[idx] = p;
 }
@@ -175,8 +176,15 @@ void P2G (uint3 DTid : SV_DispatchThreadID, uint GI : SV_GroupIndex)
 
 			if(w == 0) continue;
 
-			float3x3 F = mul(mul(p.U, ToIdentity(p.D)), transpose(p.V));
-			float3x3 R = mul(p.U, transpose(p.V));
+			float3x3 F = p.F;//mul(mul(p.U, ToIdentity(p.D)), transpose(p.V));
+
+			float3x3 U;
+			float3 D;
+			float3x3 V;
+
+			GetSVD3D(F, U, D, V);
+
+			float3x3 R = mul(U, transpose(V));
 
 			float volume = p.volume;
 			float3x3 Dinv = InvD();
@@ -286,18 +294,19 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
     p.position += _DT * p.velocity;
     p.position = clamp(p.position, _Start.xyz, float3(_DimX,_DimY,_DimZ) * _H);
 
-    float3x3 F = mul(mul(p.U, ToIdentity(p.D)), transpose(p.V));
+    float3x3 F = p.F;//mul(mul(p.U, ToIdentity(p.D)), transpose(p.V));
     F = mul(Identity3x3 + _DT * p.C, F);
+	p.F = F;
 
-	float3x3 U = 0;
-	float3 D = 0;
-	float3x3 V = 0;
+	// float3x3 U = 0;
+	// float3 D = 0;
+	// float3x3 V = 0;
 
-	GetSVD3D(F, U, D, V);
+	// GetSVD3D(F, U, D, V);
 
-	p.U = U;
-	p.D = D;
-	p.V = V;
+	// p.U = U;
+	// p.D = D;
+	// p.V = V;
 	// if(p.type == 2)
 	// {
 	// 	float3x3 U ;

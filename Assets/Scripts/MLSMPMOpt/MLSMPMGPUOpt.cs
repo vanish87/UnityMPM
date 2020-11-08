@@ -34,7 +34,7 @@ namespace UnityMPM
                 Gizmos.DrawSphere(Vector3.zero, this.mass);
             }
         }
-        [StructLayout(LayoutKind.Sequential, Size = 192)]
+        [StructLayout(LayoutKind.Sequential, Size = 112)]
         public class Particle : IPosition
         {
             public enum Type
@@ -53,12 +53,8 @@ namespace UnityMPM
             //36
             public float3x3 C;
             //72
-            public float3x3 U;
+            public float3x3 F;
             //108
-            public float3 D;
-            //120
-            public float3x3 V;
-            //156
             public float padding;
 
             public float3 Pos => this.pos;
@@ -193,15 +189,17 @@ namespace UnityMPM
 
             if (this.Is2D)
             {
-                this.AddBox(new float3(50, 50, 0), new float3(16, 16, 0)*4, this.type, 0.8f);
-                this.AddBox(new float3(54, 105, 0), new float3(16, 8, 0)*4, this.type, 0.8f);
+                this.AddBox(new float3(0.5f, 0.5f, 0), new float3(0.5f, 0.5f, 0), this.type, 0.5f);
+                // this.AddBox(new float3(54, 45, 0), new float3(16, 8, 0)*4, this.type, 0.8f);
                 // this.AddBox(new float3(30, 40, 0), new float3(10, 14, 0), this.type, 1f);
             }
             else
             {
                 // this.mpmParameter.E.Value *= 0.09f;
-                this.AddBox(new float3(10, 10, 10), new float3(4, 4, 4)*4, this.type, 0.7f);
-                this.AddBox(new float3(10, 25, 10), new float3(8, 3, 4)*2, this.type, 0.7f);
+                this.AddBox(new float3(0.5f, 0.3f, 0.5f), new float3(0.8f, 0.3f, 0.6f), this.type, 1f);
+                this.AddBox(new float3(0.5f, 0.7f, 0.5f), new float3(0.7f, 0.2f, 0.2f), this.type, 1f);
+                // this.AddBox(new float3(10, 10, 10), new float3(4, 4, 4)*4, this.type, 0.7f);
+                // this.AddBox(new float3(10, 25, 10), new float3(8, 3, 4)*2, this.type, 0.7f);
                 // this.AddBox(new float3(20, 20, 10), new float3(12, 8, 4), this.type, 1.5f);
             }
 
@@ -218,17 +216,36 @@ namespace UnityMPM
 
         protected override void Update()
         {
+            this.CheckInput();
+
             var c = 0; while (c++ < 8)
             {
                 var gsize = this.grid.DataLength;
                 var psize = this.bufferParameter.CurrentBufferLength;
-                this.dispather.Dispatch("InitGrid", gsize);
+                // this.dispather.Dispatch("InitGrid", gsize);
                 this.dispather.Dispatch("P2G", gsize);
                 this.dispather.Dispatch("UpdateGrid", gsize);
                 this.dispather.Dispatch("G2P", psize);
 
                 // ComputeShaderParameterBuffer.SwapBuffer(this.bufferParameter.particlesDataBufferRead, this.bufferParameter.particlesDataBufferWrite);
             }
+        }
+
+        protected void CheckInput()
+        {
+            if(Input.GetMouseButtonDown(0))
+            {
+                var pos = Input.mousePosition / new float3(Screen.width, Screen.height,1);
+                this.AddBox(pos, new float3(0.5f, 0.5f, 0), this.type, 0.5f);
+            }
+
+            if(Input.GetKeyDown(KeyCode.C))
+            {
+                this.parameter.activeNumberOfParticles.Value = 0;
+                this.bufferParameter.particlesIndexBufferActive.Value.SetCounterValue(0);
+                this.dispather.Dispatch("InitParticle", this.parameter.numberOfParticles.Value);
+            }
+
         }
 
         protected void SetupCamera()
@@ -245,9 +262,16 @@ namespace UnityMPM
         protected void AddBox(float3 center, float3 size, Particle.Type type, float spacing = 1)
         {
             this.mpmParameter.newParticleBuffer.Value?.Release();
-
             
-            var pos = Tool.GenerateBox(center, size, spacing);
+            var dim = this.grid.Dim;
+            var pos = Tool.GenerateBox(size * dim);
+            var ssize = size * spacing;
+
+            for(var i = 0; i < pos.Count; ++i)
+            {
+                pos[i] = (center - ssize * 0.5f) * dim + pos[i] * dim * ssize;
+                // Debug.Log(pos[i]);
+            }
 
             this.mpmParameter.ptype.Value = (int)type;
             this.mpmParameter.newParticleBuffer.Value = new ComputeBuffer(pos.Count, Marshal.SizeOf<float3>());

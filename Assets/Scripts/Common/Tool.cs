@@ -27,5 +27,26 @@ namespace UnityMPM
             return ret;
         }
 
+        public static List<float3> GenerateBox(float3 size)
+        {
+            var ret = new List<float3>();
+            var count = new int3(size) + 1;
+            
+            var scout = size;
+            scout.z = scout.z == 0?1f:scout.z;
+            foreach (var x in Enumerable.Range(0, count.x))
+            {
+                foreach (var y in Enumerable.Range(0, count.y))
+                {
+                    foreach (var z in Enumerable.Range(0, count.z))
+                    {
+                        var local = new float3(x, y, z) / scout;
+                        ret.Add(local);
+                    }
+                }
+            }
+
+            return ret;
+        }
     }
 }

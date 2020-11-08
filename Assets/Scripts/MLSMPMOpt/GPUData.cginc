@@ -8,9 +8,7 @@ struct ParticleData
     float3 position;
     float3 velocity;
     float3x3 C;
-    float3x3 U;
-    float3 D;
-    float3x3 V;
+    float3x3 F;
     float padding;
 };
 

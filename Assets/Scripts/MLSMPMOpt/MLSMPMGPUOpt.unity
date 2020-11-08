@@ -166,7 +166,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   parameter:
     numberOfParticles:
-      data: 40960
+      data: 20480
     activeNumberOfParticles:
       data: 0
   cs: {fileID: 7200000, guid: b66e2e8ad231eae4a8c135fe7fd94c04, type: 3}
@@ -177,19 +177,19 @@ MonoBehaviour:
     start:
       data: {x: 0, y: 0, z: 0, w: 0}
     dimx:
-      data: 128
+      data: 80
     dimy:
-      data: 128
+      data: 80
     dimz:
       data: 1
     h:
       data: 1
     dt:
-      data: 0.01
+      data: 0.006
     ptype:
       data: 0
     E:
-      data: 7000
+      data: 10000
     nu:
       data: 0.2
     hardening:
