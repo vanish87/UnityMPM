@@ -9,7 +9,7 @@ struct ParticleData
     float3 velocity;
     float3x3 C;
     float3x3 F;
-    float padding;
+    float Jp;
 };
 
 

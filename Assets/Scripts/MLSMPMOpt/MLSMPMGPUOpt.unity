@@ -177,19 +177,19 @@ MonoBehaviour:
     start:
       data: {x: 0, y: 0, z: 0, w: 0}
     dimx:
-      data: 80
+      data: 64
     dimy:
-      data: 80
+      data: 64
     dimz:
       data: 1
     h:
       data: 1
     dt:
-      data: 0.006
+      data: 0.005
     ptype:
       data: 0
     E:
-      data: 10000
+      data: 7000
     nu:
       data: 0.2
     hardening:

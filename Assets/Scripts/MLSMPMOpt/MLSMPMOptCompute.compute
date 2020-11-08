@@ -19,8 +19,8 @@
 #include "Assets/Scripts/Common/Math.hlsl"
 #include "Assets/Scripts/Common/SVD.hlsl"
 
-#define GTHREAD_SIZE 32
-#define PTHREAD_SIZE 256
+#define GTHREAD_SIZE 64
+#define PTHREAD_SIZE 512
 #define GRID_SHARED_GROUP_SIZE 256
 
 cbuffer cb
@@ -85,6 +85,7 @@ void AddParticles(uint3 DTid : SV_DispatchThreadID)
 	// p.D = 1;
 	// p.V = Is2D()?Identity3x32D:Identity3x3;
 	p.F = Is2D()?Identity3x32D:Identity3x3;
+	p.Jp = 1;
 
 	_ParticlesDataBufferEmitWrite[idx] = p;
 }
@@ -176,7 +177,7 @@ void P2G (uint3 DTid : SV_DispatchThreadID, uint GI : SV_GroupIndex)
 
 			if(w == 0) continue;
 
-			float3x3 F = p.F;//mul(mul(p.U, ToIdentity(p.D)), transpose(p.V));
+			float3x3 F = p.F;
 
 			float3x3 U;
 			float3 D;
@@ -194,19 +195,29 @@ void P2G (uint3 DTid : SV_DispatchThreadID, uint GI : SV_GroupIndex)
 			float mu = _mu;
 			float lambda = _lambda;
 
-			float j = determinant(F);
+
+			if(p.type == 2)
+			{
+				e = exp(_hardening * (1 - p.Jp));
+			}
+			
 
 			float mup = mu * e;
 			float lambdap = lambda * e;
 
-
+			float j = determinant(F);
 			j = clamp(j, 0.6f,20.0f);
 			float3x3 P = mul((2 * mup * (F - R)), transpose(F)) + lambdap * (j - 1) * j ;
-
+			
 			float3x3 FinvT = transpose(inverse(F));
 			P = (2.0f * mup * (F - R)) + lambdap * (j - 1.0f) * j * FinvT;
 			float3x3 stress = 1.0f / j * mul(P, transpose(F));
 
+			if(p.type == 3)
+			{
+				float s = p.Jp -1;
+				stress = float3x3(s,0,0,0,s,0,0,0,s) * mu * 10;
+			}
 			stress = -_DT * j * volume * mul(Dinv , stress);
 			
 			float3x3 apic = stress + p.mass * p.C;
@@ -296,6 +307,27 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 
     float3x3 F = p.F;//mul(mul(p.U, ToIdentity(p.D)), transpose(p.V));
     F = mul(Identity3x3 + _DT * p.C, F);
+	if(p.type == 2)
+	{
+		float3x3 U;
+		float3 D;
+		float3x3 V;
+
+		GetSVD3D(F, U, D, V);
+		
+		float dl = 1.0f - 2.5e-2f;
+		float du = 1.0f + 4.5e-3f;
+		D = clamp(D, float3(dl,dl,dl), float3(du,du,du));
+		D.z = Is2D()?0:D.z;
+	
+		float oldj = determinant(F);
+		F = mul(mul(U, ToIdentity(D)),transpose(V));
+		p.Jp = clamp(p.Jp * oldj / determinant(F), 0.8f, 10.0f);
+	}
+	if(p.type == 3)
+	{
+		p.Jp *= 1 + _DT * (p.C[0][0] + p.C[1][1]);
+	}
 	p.F = F;
 
 	// float3x3 U = 0;

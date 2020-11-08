@@ -48,5 +48,20 @@ namespace UnityMPM
 
             return ret;
         }
+
+        public static List<float3> GenerateSphere(int count, bool use3D = true)
+        {
+            var ret = new List<float3>();
+            while(ret.Count < count)
+            {
+                var np = new float3(UnityEngine.Random.value,UnityEngine.Random.value,use3D?UnityEngine.Random.value:0);
+                if(math.distance(np,0.5f) < 1)
+                {
+                    ret.Add(np);
+                }
+            }
+            return ret;
+        }
+
     }
 }

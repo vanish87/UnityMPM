@@ -55,7 +55,7 @@ namespace UnityMPM
             //72
             public float3x3 F;
             //108
-            public float padding;
+            public float Jp;
 
             public float3 Pos => this.pos;
         }
@@ -189,18 +189,21 @@ namespace UnityMPM
 
             if (this.Is2D)
             {
-                this.AddBox(new float3(0.5f, 0.5f, 0), new float3(0.5f, 0.5f, 0), this.type, 0.5f);
+                this.AddBox(new float3(0.4f, 0.8f, 0), new float3(0.9f, 0.5f, 0), this.type);
+                this.AddBox(new float3(0.5f, 0.3f, 0), new float3(0.5f, 0.5f, 0), this.type);
                 // this.AddBox(new float3(54, 45, 0), new float3(16, 8, 0)*4, this.type, 0.8f);
                 // this.AddBox(new float3(30, 40, 0), new float3(10, 14, 0), this.type, 1f);
+
             }
             else
             {
                 // this.mpmParameter.E.Value *= 0.09f;
-                this.AddBox(new float3(0.5f, 0.3f, 0.5f), new float3(0.8f, 0.3f, 0.6f), this.type, 1f);
-                this.AddBox(new float3(0.5f, 0.7f, 0.5f), new float3(0.7f, 0.2f, 0.2f), this.type, 1f);
+                this.AddBox(new float3(0.5f, 0.3f, 0.5f), new float3(0.5f, 0.3f, 0.3f), this.type);
+                this.AddBox(new float3(0.5f, 0.7f, 0.5f), new float3(0.7f, 0.2f, 0.2f), this.type);
                 // this.AddBox(new float3(10, 10, 10), new float3(4, 4, 4)*4, this.type, 0.7f);
                 // this.AddBox(new float3(10, 25, 10), new float3(8, 3, 4)*2, this.type, 0.7f);
                 // this.AddBox(new float3(20, 20, 10), new float3(12, 8, 4), this.type, 1.5f);
+                // this.mpmParameter.dt.Value = 0.01f;
             }
 
             var gsize = this.grid.DataLength;
@@ -218,7 +221,7 @@ namespace UnityMPM
         {
             this.CheckInput();
 
-            var c = 0; while (c++ < 8)
+            var c = 0; while (c++ < 24)
             {
                 var gsize = this.grid.DataLength;
                 var psize = this.bufferParameter.CurrentBufferLength;
@@ -236,7 +239,8 @@ namespace UnityMPM
             if(Input.GetMouseButtonDown(0))
             {
                 var pos = Input.mousePosition / new float3(Screen.width, Screen.height,1);
-                this.AddBox(pos, new float3(0.5f, 0.5f, 0), this.type, 0.5f);
+                pos.z = this.Is2D?0:0.5f;
+                this.AddBox(pos, new float3(0.5f, 0.5f, this.Is2D?0:0.5f), this.type);
             }
 
             if(Input.GetKeyDown(KeyCode.C))
@@ -245,6 +249,11 @@ namespace UnityMPM
                 this.bufferParameter.particlesIndexBufferActive.Value.SetCounterValue(0);
                 this.dispather.Dispatch("InitParticle", this.parameter.numberOfParticles.Value);
             }
+
+
+            if(Input.GetKeyDown(KeyCode.E)) this.type = Particle.Type.Elastic;
+            if(Input.GetKeyDown(KeyCode.S)) this.type = Particle.Type.Snow;
+            if(Input.GetKeyDown(KeyCode.F)) this.type = Particle.Type.Liquid;
 
         }
 
@@ -259,15 +268,25 @@ namespace UnityMPM
             }
         }
 
-        protected void AddBox(float3 center, float3 size, Particle.Type type, float spacing = 1)
+
+        private Dictionary<Particle.Type, float> spacingMap = new Dictionary<Particle.Type, float>()
+        {
+            {Particle.Type.Elastic, 0.5f},
+            {Particle.Type.Snow, 0.2f},
+            {Particle.Type.Liquid, 1f},
+        };
+
+        protected void AddBox(float3 center, float3 size, Particle.Type type)
         {
             this.mpmParameter.newParticleBuffer.Value?.Release();
-            
+
+            var spacing = this.spacingMap[type];
+
             var dim = this.grid.Dim;
-            var pos = Tool.GenerateBox(size * dim);
             var ssize = size * spacing;
 
-            for(var i = 0; i < pos.Count; ++i)
+            var pos = type == Particle.Type.Snow ? Tool.GenerateSphere(this.Is2D?500:3000, !this.Is2D) : Tool.GenerateBox(size * dim);
+            for (var i = 0; i < pos.Count; ++i)
             {
                 pos[i] = (center - ssize * 0.5f) * dim + pos[i] * dim * ssize;
                 // Debug.Log(pos[i]);
