@@ -14,6 +14,10 @@ Screenshots are taken on Surface book 2 with GTX1060
 - MPM: [The material point method for simulating continuum materials](https://www.seas.upenn.edu/~cffjiang/mpmcourse.html) 
 - MLSMPM: [A Moving Least Squares Material Point Method with Displacement Discontinuity and Two-Way Rigid Body Coupling](https://www.seas.upenn.edu/~cffjiang/research/mlsmpm/hu2018mlsmpm.pdf)
 
+![](gif/mpmopt.gif)
+
+![](gif/mpmopt1.gif)
+
 ## APIC
 
 In APIC folder, there are CPU/GPU 2D/3D implementations of APIC framework(no fluid). 
@@ -56,8 +60,6 @@ Implementation of A Moving Least Squares Material Point Method with Displacement
 ### There is also a 3D version
 
 ![](gif/mlsmpm_elastic3d.gif)
-
-
 
 ## Reference
 
