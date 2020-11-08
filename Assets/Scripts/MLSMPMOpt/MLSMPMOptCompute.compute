@@ -21,7 +21,7 @@
 
 #define GTHREAD_SIZE 32
 #define PTHREAD_SIZE 256
-#define GRID_SHARED_GROUP_SIZE 256
+#define GRID_SHARED_GROUP_SIZE 128
 
 cbuffer cb
 {
@@ -81,8 +81,9 @@ void AddParticles(uint3 DTid : SV_DispatchThreadID)
 	p.position = _CPUNewParticles[newpid];
 	p.velocity = float3(0, 0, 0);
 	p.C = 0;
-	p.Fe = Is2D()?Identity3x32D:Identity3x3;
-	p.Jp = 1;
+	p.U = Is2D()?Identity3x32D:Identity3x3;
+	p.D = 1;
+	p.V = Is2D()?Identity3x32D:Identity3x3;
 
 	_ParticlesDataBufferEmitWrite[idx] = p;
 }
@@ -174,44 +175,18 @@ void P2G (uint3 DTid : SV_DispatchThreadID, uint GI : SV_GroupIndex)
 
 			if(w == 0) continue;
 
-			float3x3 F = p.Fe;
-			float3x3 R = 0;
-			float3x3 U ;
-			float3 d;
-			float3x3 V;
+			float3x3 F = mul(mul(p.U, ToIdentity(p.D)), transpose(p.V));
+			float3x3 R = mul(p.U, transpose(p.V));
 
 			float volume = p.volume;
 			float3x3 Dinv = InvD();
 			
-
-			if(Is2D())
-			{
-				float3x3 S = 0;
-				GetPolarDecomposition2D(F, R, S);
-			}
-			else
-			{
-				GetSVD3D(F, U, d, V);
-				R = mul(U, transpose(V));
-			}
-
-
 
 			float e = 1;
 			float mu = _mu;
 			float lambda = _lambda;
 
 			float j = determinant(F);
-			if(p.type == 2)
-			{
-				e = exp(_hardening * (1 - p.Jp));
-			}
-			// else
-			// if(p.type == 3)
-			// {
-			// 	mu = 0;
-			// 	j = p.Jp;
-			// }
 
 			float mup = mu * e;
 			float lambdap = lambda * e;
@@ -222,15 +197,9 @@ void P2G (uint3 DTid : SV_DispatchThreadID, uint GI : SV_GroupIndex)
 
 			float3x3 FinvT = transpose(inverse(F));
 			P = (2.0f * mup * (F - R)) + lambdap * (j - 1.0f) * j * FinvT;
-			if(p.type == 3)
-			{
-				float s = p.Jp -1;
-				P = ToIdentity(s) * mu ;
-			}
 			float3x3 stress = 1.0f / j * mul(P, transpose(F));
 
 			stress = -_DT * j * volume * mul(Dinv , stress);
-
 			
 			float3x3 apic = stress + p.mass * p.C;
 
@@ -317,49 +286,58 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
     p.position += _DT * p.velocity;
     p.position = clamp(p.position, _Start.xyz, float3(_DimX,_DimY,_DimZ) * _H);
 
-    float3x3 F = p.Fe;
+    float3x3 F = mul(mul(p.U, ToIdentity(p.D)), transpose(p.V));
     F = mul(Identity3x3 + _DT * p.C, F);
 
-	if(p.type == 2)
-	{
-		float3x3 U ;
-		float3 d;
-		float3x3 V;
+	float3x3 U = 0;
+	float3 D = 0;
+	float3x3 V = 0;
 
-		if(Is2D())
-		{
-			float2x2 F2d = To2D(F);
-			float2x2 U2d = 0;
-			float2 d2d = 0;
-			float2x2 V2d = 0;
-			GetSVD2D(F2d, U2d, d2d, V2d);
+	GetSVD3D(F, U, D, V);
 
-			U = To3D(U2d);
-			d = float3(d2d[0], d2d[1], 0);
-			V = To3D(V2d);
-		}
-		else
-		{
-			GetSVD3D(F, U, d, V);
-		}
+	p.U = U;
+	p.D = D;
+	p.V = V;
+	// if(p.type == 2)
+	// {
+	// 	float3x3 U ;
+	// 	float3 d;
+	// 	float3x3 V;
 
-		float dl = 1.0f - 2.5e-2f;
-		float du = 1.0f + 4.5e-3f;
-		d = clamp(d, float3(dl,dl,dl), float3(du,du,du));
-		float3x3 D = float3x3(d[0], 0, 0, 0, d[1], 0, 0, 0, Is2D()?0:d[2]);
+	// 	if(Is2D())
+	// 	{
+	// 		float2x2 F2d = To2D(F);
+	// 		float2x2 U2d = 0;
+	// 		float2 d2d = 0;
+	// 		float2x2 V2d = 0;
+	// 		GetSVD2D(F2d, U2d, d2d, V2d);
+
+	// 		U = To3D(U2d);
+	// 		d = float3(d2d[0], d2d[1], 0);
+	// 		V = To3D(V2d);
+	// 	}
+	// 	else
+	// 	{
+	// 		GetSVD3D(F, U, d, V);
+	// 	}
+
+	// 	float dl = 1.0f - 2.5e-2f;
+	// 	float du = 1.0f + 4.5e-3f;
+	// 	d = clamp(d, float3(dl,dl,dl), float3(du,du,du));
+	// 	float3x3 D = float3x3(d[0], 0, 0, 0, d[1], 0, 0, 0, Is2D()?0:d[2]);
 		
-		float oldj = determinant(F);
-		F = mul(mul(U, D),transpose(V));
+	// 	float oldj = determinant(F);
+	// 	F = mul(mul(U, D),transpose(V));
 
-		p.Jp = clamp(p.Jp * oldj / determinant(F), 0.6f, 10.0f);
-	}
-	else
-	if(p.type == 3)
-	{
-		p.Jp *= 1 + _DT * (p.C[0][0] + p.C[1][1]);
-	}
+	// 	p.Jp = clamp(p.Jp * oldj / determinant(F), 0.6f, 10.0f);
+	// }
+	// else
+	// if(p.type == 3)
+	// {
+	// 	p.Jp *= 1 + _DT * (p.C[0][0] + p.C[1][1]);
+	// }
 
-	p.Fe = F;
+	// p.Fe = F;
 
 	_ParticlesDataBufferRead[pid] = p;
 

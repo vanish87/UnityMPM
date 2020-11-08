@@ -53,10 +53,13 @@ namespace UnityMPM
             //36
             public float3x3 C;
             //72
-            public float3x3 Fe;
+            public float3x3 U;
             //108
-            public float Jp;
-            //112
+            public float3 D;
+            //120
+            public float3x3 V;
+            //156
+            public float padding;
 
             public float3 Pos => this.pos;
         }
@@ -197,7 +200,7 @@ namespace UnityMPM
             else
             {
                 // this.mpmParameter.E.Value *= 0.09f;
-                this.AddBox(new float3(10, 10, 10), new float3(4, 4, 4)*3, this.type, 0.7f);
+                this.AddBox(new float3(10, 10, 10), new float3(4, 4, 4)*4, this.type, 0.7f);
                 this.AddBox(new float3(10, 25, 10), new float3(8, 3, 4)*2, this.type, 0.7f);
                 // this.AddBox(new float3(20, 20, 10), new float3(12, 8, 4), this.type, 1.5f);
             }
