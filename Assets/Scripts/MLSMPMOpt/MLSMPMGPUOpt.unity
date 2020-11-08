@@ -166,7 +166,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   parameter:
     numberOfParticles:
-      data: 20480
+      data: 10240
     activeNumberOfParticles:
       data: 0
   cs: {fileID: 7200000, guid: b66e2e8ad231eae4a8c135fe7fd94c04, type: 3}
@@ -367,7 +367,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2117223144}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 16, y: 8, z: -10}
+  m_LocalPosition: {x: 9.81, y: 8, z: -10}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 0}
