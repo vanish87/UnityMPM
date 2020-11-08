@@ -140,105 +140,110 @@ void InitGrid(uint3 DTid : SV_DispatchThreadID)
 	c.vel = 0;
 	_Grid[idx] = c;
 }
-[numthreads(GTHREAD_SIZE,1,1)]
-void P2G (uint3 DTid : SV_DispatchThreadID)
+
+
+groupshared ParticleData shared_particles[GRID_SHARED_GROUP_SIZE];
+[numthreads(GRID_SHARED_GROUP_SIZE,1,1)]
+void P2G (uint3 DTid : SV_DispatchThreadID, uint GI : SV_GroupIndex)
 {
     const uint CellID = DTid.x;
+	uint3 cidx = CDIndexToCIndex(CellID);
 	CellData c = _Grid[CellID];
+
+	float mass = 0;
+	float3 mv = 0;
+
 	[loop]
-	for (int pi = 0; pi < _NumberOfParticles; ++pi)
+	for (uint N_block_ID = 0; N_block_ID < (uint)_NumberOfParticles; N_block_ID += GRID_SHARED_GROUP_SIZE)
 	{
-        ParticleData p = _ParticlesDataBufferRead[pi];
-		if(!p.type) continue;
+        ParticleData tp = _ParticlesDataBufferRead[N_block_ID+GI];
+		shared_particles[GI] = tp;
 
-        int3 gidx = PPosToCIndex(p.position);
-        for (int gx = -1; gx <= 1; ++gx)
-        {
-            for (int gy = -1; gy <= 1; ++gy)
+		GroupMemoryBarrierWithGroupSync();
+
+		[loop]
+		for (uint N_tile_ID = 0; N_tile_ID < GRID_SHARED_GROUP_SIZE; N_tile_ID++)
+		{
+			uint N_ID = N_block_ID + N_tile_ID;
+			ParticleData p = shared_particles[N_tile_ID];
+
+			if(!p.type) continue;
+
+			float3 gpos = CIndexToCPos(cidx);
+			float w = GetWeightWithCell(p.position, cidx);
+
+			if(w == 0) continue;
+
+			float3x3 F = p.Fe;
+			float3x3 R = 0;
+			float3x3 U ;
+			float3 d;
+			float3x3 V;
+
+			float volume = p.volume;
+			float3x3 Dinv = InvD();
+			
+
+			if(Is2D())
 			{
-				for(int gz = -1; gz <=1; ++gz)
-				{
-					int3 delta = int3(gx,gy,gz);
-					int3 cid = gidx + delta;
-
-					uint idx = CIndexToCDIndex(cid);
-					if(CellID != idx) continue;
-
-					if (InGrid(cid))
-					{
-						float3 gpos = CIndexToCPos(cid);
-						float w = GetWeight(p.position, delta);
-
-						float3x3 F = p.Fe;
-						float3x3 R = 0;
-						float3x3 U ;
-						float3 d;
-						float3x3 V;
-
-						float volume = p.volume;
-						float3x3 Dinv = InvD();
-						
-
-						if(Is2D())
-						{
-							float3x3 S = 0;
-							GetPolarDecomposition2D(F, R, S);
-						}
-						else
-						{
-							GetSVD3D(F, U, d, V);
-							R = mul(U, transpose(V));
-						}
-
-
-
-						float e = 1;
-						float mu = _mu;
-						float lambda = _lambda;
-
-						float j = determinant(F);
-						if(p.type == 2)
-						{
-							e = exp(_hardening * (1 - p.Jp));
-						}
-						// else
-						// if(p.type == 3)
-						// {
-						// 	mu = 0;
-						// 	j = p.Jp;
-						// }
-
-						float mup = mu * e;
-						float lambdap = lambda * e;
-
-
-						j = clamp(j, 0.6f,20.0f);
-						float3x3 P = mul((2 * mup * (F - R)), transpose(F)) + lambdap * (j - 1) * j ;
-
-						float3x3 FinvT = transpose(inverse(F));
-						P = (2.0f * mup * (F - R)) + lambdap * (j - 1.0f) * j * FinvT;
-						if(p.type == 3)
-						{
-							float s = p.Jp -1;
-							P = ToIdentity(s) * mu ;
-						}
-						float3x3 stress = 1.0f / j * mul(P, transpose(F));
-
-						stress = -_DT * j * volume * mul(Dinv , stress);
-
-						
-						float3x3 apic = stress + p.mass * p.C;
-
-						
-
-						c.mass += w * p.mass;
-						c.mv += w * p.mass*( p.velocity + mul(apic, (gpos-p.position)));
-						// c.force += -volume * mul(stress, wd);
-					}
-				}
+				float3x3 S = 0;
+				GetPolarDecomposition2D(F, R, S);
 			}
+			else
+			{
+				GetSVD3D(F, U, d, V);
+				R = mul(U, transpose(V));
+			}
+
+
+
+			float e = 1;
+			float mu = _mu;
+			float lambda = _lambda;
+
+			float j = determinant(F);
+			if(p.type == 2)
+			{
+				e = exp(_hardening * (1 - p.Jp));
+			}
+			// else
+			// if(p.type == 3)
+			// {
+			// 	mu = 0;
+			// 	j = p.Jp;
+			// }
+
+			float mup = mu * e;
+			float lambdap = lambda * e;
+
+
+			j = clamp(j, 0.6f,20.0f);
+			float3x3 P = mul((2 * mup * (F - R)), transpose(F)) + lambdap * (j - 1) * j ;
+
+			float3x3 FinvT = transpose(inverse(F));
+			P = (2.0f * mup * (F - R)) + lambdap * (j - 1.0f) * j * FinvT;
+			if(p.type == 3)
+			{
+				float s = p.Jp -1;
+				P = ToIdentity(s) * mu ;
+			}
+			float3x3 stress = 1.0f / j * mul(P, transpose(F));
+
+			stress = -_DT * j * volume * mul(Dinv , stress);
+
+			
+			float3x3 apic = stress + p.mass * p.C;
+
+			mass += w * p.mass;
+			mv += w * p.mass*( p.velocity + mul(apic, (gpos-p.position)));
 		}
+
+		GroupMemoryBarrierWithGroupSync();
 	}
+
+	c.mass = mass;
+	c.mv = mv;
+
 	_Grid[CellID] = c;
 
 }

@@ -69,6 +69,17 @@ inline bool InGrid(uint3 idx)
 	uint cdid = CIndexToCDIndex(idx);
 	return 0<= cdid && cdid < _DimX * _DimY *_DimZ;
 }
+inline float GetWeightWithCell(float3 pos, int3 cellIndex)
+{
+	if (!InGrid(cellIndex)) return 0;
+
+	float3 gpos = CIndexToCPos(cellIndex);
+	float3 dis = pos - gpos;
+	float3 invH = 1.0f / _H;
+	dis *= invH;
+
+	return  N(dis.x) * N(dis.y) *(Is2D()?1: N(dis.z));
+}
 inline float GetWeight(float3 pos, int3 delta)
 {
 	int3 gindex = PPosToCIndex(pos) + delta;

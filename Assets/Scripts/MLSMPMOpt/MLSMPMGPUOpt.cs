@@ -190,15 +190,15 @@ namespace UnityMPM
 
             if (this.Is2D)
             {
-                this.AddBox(new float3(20, 20, 0), new float3(16, 16, 0), this.type, 0.8f);
-                this.AddBox(new float3(14, 40, 0), new float3(16, 8, 0), this.type, 0.8f);
+                this.AddBox(new float3(50, 50, 0), new float3(16, 16, 0)*4, this.type, 0.8f);
+                this.AddBox(new float3(54, 105, 0), new float3(16, 8, 0)*4, this.type, 0.8f);
                 // this.AddBox(new float3(30, 40, 0), new float3(10, 14, 0), this.type, 1f);
             }
             else
             {
-                this.mpmParameter.E.Value *= 0.09f;
-                this.AddBox(new float3(10, 10, 10), new float3(4, 4, 4), this.type, 0.8f);
-                this.AddBox(new float3(10, 25, 10), new float3(8, 3, 4), this.type, 0.8f);
+                // this.mpmParameter.E.Value *= 0.09f;
+                this.AddBox(new float3(10, 10, 10), new float3(4, 4, 4)*3, this.type, 0.7f);
+                this.AddBox(new float3(10, 25, 10), new float3(8, 3, 4)*2, this.type, 0.7f);
                 // this.AddBox(new float3(20, 20, 10), new float3(12, 8, 4), this.type, 1.5f);
             }
 
@@ -215,7 +215,7 @@ namespace UnityMPM
 
         protected override void Update()
         {
-            var c = 0; while (c++ < 16)
+            var c = 0; while (c++ < 8)
             {
                 var gsize = this.grid.DataLength;
                 var psize = this.bufferParameter.CurrentBufferLength;
