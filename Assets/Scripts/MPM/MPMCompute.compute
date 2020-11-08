@@ -256,21 +256,7 @@ void UpdateGrid(uint3 DTid : SV_DispatchThreadID)
     _Grid[CellID] = c;
 
 }
-float3x3 Outer(float3 u, float3 v)
-{
-    if(Is2D())
-    {
-        return float3x3(u[0]*v[0], u[0]*v[1],0,
-                        u[1]*v[0], u[1]*v[1],0,
-                        0,0,0);
-    }
-    else
-    {
-        return float3x3(u[0]*v[0], u[0]*v[1],u[0]*v[2],
-                        u[1]*v[0], u[1]*v[1],u[1]*v[2],
-                        u[2]*v[0], u[2]*v[1],u[2]*v[2]);
-    }
-}
+
 [numthreads(32, 1, 1)]
 void G2P(uint3 DTid : SV_DispatchThreadID)
 {

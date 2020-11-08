@@ -132,7 +132,7 @@ GameObject:
   - component: {fileID: 1112394460}
   - component: {fileID: 1112394461}
   m_Layer: 0
-  m_Name: MLSMPMGPU
+  m_Name: MLSMPMGPUOpt
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -161,35 +161,35 @@ MonoBehaviour:
   m_GameObject: {fileID: 1112394459}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 786de8046eee7c64dbb32fe7353b7af5, type: 3}
+  m_Script: {fileID: 11500000, guid: fdc2b3d440680db459ba3d203cbdacac, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   parameter:
     numberOfParticles:
-      data: 5120
+      data: 1024
     activeNumberOfParticles:
       data: 0
-  cs: {fileID: 7200000, guid: 5b303259b899d0f4492a936ae219b4a9, type: 3}
-  m: {fileID: 2100000, guid: 1373c5b085fc0244092791e59ec05b9b, type: 2}
+  cs: {fileID: 7200000, guid: b66e2e8ad231eae4a8c135fe7fd94c04, type: 3}
+  m: {fileID: 2100000, guid: 18135a8f34e30124188a6df35ffd115d, type: 2}
   particleTexture: {fileID: 10300, guid: 0000000000000000f000000000000000, type: 0}
   type: 1
   mpmParameter:
     start:
       data: {x: 0, y: 0, z: 0, w: 0}
     dimx:
-      data: 32
+      data: 64
     dimy:
-      data: 32
+      data: 64
     dimz:
-      data: 16
+      data: 1
     h:
       data: 1
     dt:
-      data: 0.004
+      data: 0.01
     ptype:
       data: 0
     E:
-      data: 1200
+      data: 1400
     nu:
       data: 0.2
     hardening:
