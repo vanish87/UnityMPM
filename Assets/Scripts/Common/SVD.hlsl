@@ -519,17 +519,17 @@ void GetSVD3D(in float3x3 A, out float3x3 U, out float3 D, out float3x3 V)
 	PostProcess(B, U, V, alpha, beta, D, tao);
 }
 
-void GetSVD3D(in float2x2 A, out float2x2 U, out float2 D, out float2x2 V)
+void GetSVD2D(in float3x3 A, out float3x3 U, out float3 D, out float3x3 V)
 {
-	float3x3 F3d = To3D(A);
-	float3x3 U3d = 0;
-	float3 D3d = 0;
-	float3x3 V3d = 0;
+	float2x2 F2d = To2D(A);
+	float2x2 U2d = 0;
+	float2 D2d = 0;
+	float2x2 V2d = 0;
 
-	GetSVD3D(F3d, U3d, D3d, V3d);
+	GetSVD2D(F2d, U2d, D2d, V2d);
 
-	U = To2D(U3d);
-	D = float2(D3d[0], D3d[1]);
-	V = To2D(V3d);
+	U = To3D(U2d);
+	D = float3(D2d[0], D2d[1], 0);
+	V = To3D(V2d);
 }
 #endif

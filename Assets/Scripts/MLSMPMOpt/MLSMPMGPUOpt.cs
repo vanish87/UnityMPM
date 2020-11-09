@@ -64,13 +64,14 @@ namespace UnityMPM
         {
 
             public ComputeShaderParameterBuffer type = new ComputeShaderParameterBuffer("_ptype");
-            public ComputeShaderParameterBuffer mass = new ComputeShaderParameterBuffer("_pmass");
-            public ComputeShaderParameterBuffer volume = new ComputeShaderParameterBuffer("_pvolume");
+            // public ComputeShaderParameterBuffer mass = new ComputeShaderParameterBuffer("_pmass");
+            // public ComputeShaderParameterBuffer volume = new ComputeShaderParameterBuffer("_pvolume");
             public ComputeShaderParameterBuffer pos = new ComputeShaderParameterBuffer("_ppos");
             public ComputeShaderParameterBuffer vel = new ComputeShaderParameterBuffer("_pvel");
             public ComputeShaderParameterBuffer c = new ComputeShaderParameterBuffer("_pc");
             public ComputeShaderParameterBuffer f = new ComputeShaderParameterBuffer("_pf");
             public ComputeShaderParameterBuffer jp = new ComputeShaderParameterBuffer("_pjp");
+            public ComputeShaderParameterBuffer apic = new ComputeShaderParameterBuffer("_papic");
         }
         [System.Serializable]
         public class MPMGPUParameterContainer : ComputeShaderParameterContainer
@@ -298,13 +299,14 @@ namespace UnityMPM
         {
             var psize = this.bufferParameter.CurrentBufferLength;
             this.soaBuffer.type.Value = new ComputeBuffer(psize, Marshal.SizeOf<int>());
-            this.soaBuffer.mass.Value = new ComputeBuffer(psize, Marshal.SizeOf<float>());
-            this.soaBuffer.volume.Value = new ComputeBuffer(psize, Marshal.SizeOf<float>());
-            this.soaBuffer.pos.Value = new ComputeBuffer(psize, Marshal.SizeOf<float3>());
+            // this.soaBuffer.mass.Value = new ComputeBuffer(psize, Marshal.SizeOf<float>());
+            // this.soaBuffer.volume.Value = new ComputeBuffer(psize, Marshal.SizeOf<float>());
+            this.soaBuffer.pos.Value = new ComputeBuffer(psize, Marshal.SizeOf<float4>());
             this.soaBuffer.vel.Value = new ComputeBuffer(psize, Marshal.SizeOf<float3>());
             this.soaBuffer.c.Value = new ComputeBuffer(psize, Marshal.SizeOf<float3x3>());
             this.soaBuffer.f.Value = new ComputeBuffer(psize, Marshal.SizeOf<float3x3>());
             this.soaBuffer.jp.Value = new ComputeBuffer(psize, Marshal.SizeOf<float>());
+            this.soaBuffer.apic.Value = new ComputeBuffer(psize, Marshal.SizeOf<float3x3>());
         }
 
         protected override void OnSetRenderMaterial(Material m)

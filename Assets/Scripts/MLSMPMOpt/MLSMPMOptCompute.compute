@@ -58,9 +58,9 @@ StructuredBuffer<float3> _CPUNewParticles;
 
 
 RWStructuredBuffer<int> _ptype;
-RWStructuredBuffer<float> _pmass;
+// RWStructuredBuffer<float> _pmass;
 // RWStructuredBuffer<float> _pvolume;
-RWStructuredBuffer<float3> _ppos;
+RWStructuredBuffer<float4> _ppos;
 RWStructuredBuffer<float3> _pvel;
 RWStructuredBuffer<float3x3> _pc;
 RWStructuredBuffer<float3x3> _pf;
@@ -77,7 +77,7 @@ void InitParticle(uint3 DTid : SV_DispatchThreadID)
 {
 	uint idx = DTid.x;
 
-	_ppos[idx] = float3(0,0,0);
+	_ppos[idx] = 0;
 	_ptype[idx] = 0;
 
 	_ParticlesIndexBufferInit.Append(idx);
@@ -89,10 +89,10 @@ void AddParticles(uint3 DTid : SV_DispatchThreadID)
 	uint newpid = DTid.x;
 
 	_ptype[idx] = _ParticleType;
-	_pmass[idx] = MassMap[_ParticleType];
+	// _pmass[idx] = MassMap[_ParticleType];
 	// _pvolume[idx] = 1;
-	_ppos[idx] = _CPUNewParticles[newpid];
-	_pvel[idx] = float3(0, 0, 0);
+	_ppos[idx] = float4(_CPUNewParticles[newpid],MassMap[_ParticleType]);
+	_pvel[idx] = 0;
 	_pc[idx] = 0;
 	// p.U = Is2D()?Identity3x32D:Identity3x3;
 	// p.D = 1;
@@ -117,7 +117,7 @@ void UpdateParticleVolume(uint3 DTid : SV_DispatchThreadID)
 	if(!_ptype[pid]) return;
 
 	float density = 0;
-	int3 gidx = PPosToCIndex(_ppos[pid]);
+	int3 gidx = PPosToCIndex(_ppos[pid].xyz);
 	for (int gx = -1; gx <= 1; ++gx)
 	{
 		for (int gy = -1; gy <= 1; ++gy)
@@ -132,7 +132,7 @@ void UpdateParticleVolume(uint3 DTid : SV_DispatchThreadID)
 				if (InGrid(cid))
 				{
 					float3 gpos = CIndexToCPos(cid);
-					float w = GetWeight(_ppos[pid], delta);
+					float w = GetWeight(_ppos[pid].xyz, delta);
 
 					density += _Grid[idx].mass * w;
 				}
@@ -162,6 +162,7 @@ groupshared float3 spos[GRID_SHARED_GROUP_SIZE];
 groupshared float3 svel[GRID_SHARED_GROUP_SIZE];
 groupshared float3x3 sc[GRID_SHARED_GROUP_SIZE];
 groupshared float3x3 sf[GRID_SHARED_GROUP_SIZE];
+groupshared float3x3 sapic[GRID_SHARED_GROUP_SIZE];
 groupshared float sjp[GRID_SHARED_GROUP_SIZE];
 [numthreads(GRID_SHARED_GROUP_SIZE,1,1)]
 void P2G (uint3 DTid : SV_DispatchThreadID, uint GI : SV_GroupIndex)
@@ -177,12 +178,13 @@ void P2G (uint3 DTid : SV_DispatchThreadID, uint GI : SV_GroupIndex)
 	for (uint N_block_ID = 0; N_block_ID < (uint)_NumberOfParticles; N_block_ID += GRID_SHARED_GROUP_SIZE)
 	{
         stype[GI] = _ptype[N_block_ID+GI];
-        smass[GI] = _pmass[N_block_ID+GI];
+        smass[GI] = _ppos[N_block_ID+GI].w;
         // svolume[GI] = _pvolume[N_block_ID+GI];
-        spos[GI] = _ppos[N_block_ID+GI];
+        spos[GI] = _ppos[N_block_ID+GI].xyz;
         svel[GI] = _pvel[N_block_ID+GI];
         sc[GI] = _pc[N_block_ID+GI];
         sf[GI] = _pf[N_block_ID+GI];
+        sapic[GI] = _papic[N_block_ID+GI];
         sjp[GI] = _pjp[N_block_ID+GI];
 
 		GroupMemoryBarrierWithGroupSync();
@@ -199,52 +201,8 @@ void P2G (uint3 DTid : SV_DispatchThreadID, uint GI : SV_GroupIndex)
 			float w = GetWeightWithCell(spos[pid], cidx);
 
 			if(w == 0) continue;
-
-			float3x3 F = sf[pid];
-
-			float3x3 U;
-			float3 D;
-			float3x3 V;
-
-			GetSVD3D(F, U, D, V);
-
-			float3x3 R = mul(U, transpose(V));
-
-			// float volume = svolume[pid];
-			float volume = 1;
-			float3x3 Dinv = InvD();
 			
-
-			float e = 1;
-			float mu = _mu;
-			float lambda = _lambda;
-
-
-			if(stype[pid] == 2)
-			{
-				e = exp(_hardening * (1 - sjp[pid]));
-			}
-			
-
-			float mup = mu * e;
-			float lambdap = lambda * e;
-
-			float j = determinant(F);
-			j = clamp(j, 0.6f,20.0f);
-			float3x3 P = mul((2 * mup * (F - R)), transpose(F)) + lambdap * (j - 1) * j ;
-			
-			float3x3 FinvT = transpose(inverse(F));
-			P = (2.0f * mup * (F - R)) + lambdap * (j - 1.0f) * j * FinvT;
-			float3x3 stress = 1.0f / j * mul(P, transpose(F));
-
-			if(stype[pid] == 3)
-			{
-				float s = sjp[pid] -1;
-				stress = float3x3(s,0,0,0,s,0,0,0,s) * mu * 10;
-			}
-			stress = -_DT * j * volume * mul(Dinv , stress);
-			
-			float3x3 apic = stress + smass[pid] * sc[pid];
+			float3x3 apic = sapic[pid];
 
 			mass += w * smass[pid];
 			mv += w * smass[pid]*( svel[pid] + mul(apic, (gpos-spos[pid])));
@@ -305,7 +263,7 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
     _pc[pid] = 0;
 	float Hinv = 1.0f/_H;
 
-	int3 gidx = PPosToCIndex(_ppos[pid]);
+	int3 gidx = PPosToCIndex(_ppos[pid].xyz);
 	for (int gx = -1; gx <= 1; ++gx)
 	{
 		for (int gy = -1; gy <= 1; ++gy)
@@ -318,18 +276,18 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 				if (InGrid(cid))
 				{
 					float3 gpos = CIndexToCPos(cid);
-					float w = GetWeight(_ppos[pid], delta);
+					float w = GetWeight(_ppos[pid].xyz, delta);
 					float3 vel = _Grid[idx].vel;
 
 					_pvel[pid] += w * vel;
-					_pc[pid] += 4 * Hinv * (Is2D()?Math_OuterProduct2D(w*vel, gpos-_ppos[pid]):Math_OuterProduct(w * vel, gpos-_ppos[pid]));
+					_pc[pid] += 4 * Hinv * (Is2D()?Math_OuterProduct2D(w*vel, gpos-_ppos[pid].xyz):Math_OuterProduct(w * vel, gpos-_ppos[pid].xyz));
 				}
 			}
 		}
 	}
 
-    _ppos[pid] += _DT * _pvel[pid];
-    _ppos[pid] = clamp(_ppos[pid], _Start.xyz, float3(_DimX,_DimY,_DimZ) * _H);
+    _ppos[pid].xyz += _DT * _pvel[pid];
+    _ppos[pid].xyz = clamp(_ppos[pid].xyz, _Start.xyz, float3(_DimX,_DimY,_DimZ) * _H);
 
     float3x3 F = _pf[pid];//mul(mul(p.U, ToIdentity(p.D)), transpose(p.V));
     F = mul(Identity3x3 + _DT * _pc[pid], F);
@@ -359,49 +317,54 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 
 
 
-			// float3x3 U;
-			// float3 D;
-			// float3x3 V;
+		float3x3 U;
+		float3 D;
+		float3x3 V;
 
-			// GetSVD3D(F, U, D, V);
+		if(Is2D())GetSVD2D(F, U, D, V);
+		else GetSVD3D(F, U, D, V);
 
-			// float3x3 R = mul(U, transpose(V));
+		float3x3 R = mul(U, transpose(V));
 
-			// // float volume = svolume[pid];
-			// float volume = 1;
-			// float3x3 Dinv = InvD();
-			
+		// float volume = svolume[pid];
+		float volume = 1;
+		float3x3 Dinv = InvD();
+		
 
-			// float e = 1;
-			// float mu = _mu;
-			// float lambda = _lambda;
+		float e = 1;
+		float mu = _mu;
+		float lambda = _lambda;
+
+		float3x3 stress = Identity3x3;
 
 
-			// if(_ptype[pid] == 2)
-			// {
-			// 	e = exp(_hardening * (1 - _pjp[pid]));
-			// }
-			
+		if(_ptype[pid] == 2)
+		{
+			e = exp(_hardening * (1 - _pjp[pid]));
+		}
+		
 
-			// float mup = mu * e;
-			// float lambdap = lambda * e;
+		float mup = mu * e;
+		float lambdap = lambda * e;
 
-			// float j = determinant(F);
-			// j = clamp(j, 0.6f,20.0f);
-			// float3x3 P = mul((2 * mup * (F - R)), transpose(F)) + lambdap * (j - 1) * j ;
-			
-			// float3x3 FinvT = transpose(inverse(F));
-			// P = (2.0f * mup * (F - R)) + lambdap * (j - 1.0f) * j * FinvT;
-			// float3x3 stress = 1.0f / j * mul(P, transpose(F));
+		float j = determinant(F);
+		j = clamp(j, 0.6f,20.0f);
+		float3x3 P = mul((2 * mup * (F - R)), transpose(F)) + lambdap * (j - 1) * j ;
+		
+		float3x3 FinvT = transpose(inverse(F));
+		P = (2.0f * mup * (F - R)) + lambdap * (j - 1.0f) * j * FinvT;
+		stress = 1.0f / j * mul(P, transpose(F));
 
-			// if(_ptype[pid] == 3)
-			// {
-			// 	float s = _pjp[pid] -1;
-			// 	stress = float3x3(s,0,0,0,s,0,0,0,s) * mu * 10;
-			// }
-			// stress = -_DT * j * volume * mul(Dinv , stress);
-			
-			// float3x3 apic = stress + ?p[pid] * sc[pid];
+		if(_ptype[pid] == 3)
+		{
+			float s = _pjp[pid] -1;
+			stress = float3x3(s,0,0,0,s,0,0,0,s) * mu * 10;
+		}
+		stress = -_DT * j * volume * mul(Dinv , stress);
+		
+		float3x3 apic = stress + _ppos[pid].w * _pc[pid];
+
+		_papic[pid] = apic;
 
 	// float3x3 U = 0;
 	// float3 D = 0;
