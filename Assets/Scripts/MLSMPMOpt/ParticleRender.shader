@@ -17,7 +17,8 @@
 		float4 color    : COLOR;
 	};
 
-	StructuredBuffer<ParticleData> _ParticleBuffer;
+	StructuredBuffer<float3> _pos;
+	StructuredBuffer<int> _type;
 	sampler2D _MainTex;
 	float4    _MainTex_ST;
 	float     _ParticleSize;
@@ -43,13 +44,13 @@
 	v2g vert(uint id : SV_VertexID) // SV_VertexID:
 	{
 		float4 c = 1;
-		if(_ParticleBuffer[id].type == 1) c = float4(1,0,0,1);
-		else if(_ParticleBuffer[id].type == 2) c = 1;
-		else c = float4(0.19,0.37,0.8,1);
+		// if(_ParticleBuffer[id].type == 1) c = float4(1,0,0,1);
+		// else if(_ParticleBuffer[id].type == 2) c = 1;
+		// else c = float4(0.19,0.37,0.8,1);
 		v2g o = (v2g)0;
-		o.position = _ParticleBuffer[id].position;
+		o.position = _pos[id];
 		o.color = c;
-		o.size = _ParticleBuffer[id].type?1:0;
+		o.size = _type[id]>0;
 		return o;
 	}
 

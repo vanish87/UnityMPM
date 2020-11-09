@@ -59,6 +59,19 @@ namespace UnityMPM
 
             public float3 Pos => this.pos;
         }
+
+        public class MPMSOAContainer : ComputeShaderParameterContainer
+        {
+
+            public ComputeShaderParameterBuffer type = new ComputeShaderParameterBuffer("_ptype");
+            public ComputeShaderParameterBuffer mass = new ComputeShaderParameterBuffer("_pmass");
+            public ComputeShaderParameterBuffer volume = new ComputeShaderParameterBuffer("_pvolume");
+            public ComputeShaderParameterBuffer pos = new ComputeShaderParameterBuffer("_ppos");
+            public ComputeShaderParameterBuffer vel = new ComputeShaderParameterBuffer("_pvel");
+            public ComputeShaderParameterBuffer c = new ComputeShaderParameterBuffer("_pc");
+            public ComputeShaderParameterBuffer f = new ComputeShaderParameterBuffer("_pf");
+            public ComputeShaderParameterBuffer jp = new ComputeShaderParameterBuffer("_pjp");
+        }
         [System.Serializable]
         public class MPMGPUParameterContainer : ComputeShaderParameterContainer
         {
@@ -91,6 +104,8 @@ namespace UnityMPM
         protected bool Is2D => this.mpmParameter.dimz == 1;
 
         protected Grid<Cell> grid;
+
+        protected MPMSOAContainer soaBuffer = new MPMSOAContainer();
 
 
         float3x3 inverse(float3x3 m)
@@ -134,32 +149,39 @@ namespace UnityMPM
             this.dispather = new ComputeShaderDispatcher(this.cs);
             //init append buffer
             this.dispather.AddParameter("InitParticle", this.bufferParameter);
+            this.dispather.AddParameter("InitParticle", this.soaBuffer);
 
             this.dispather.AddParameter("P2G", this.parameter);
             this.dispather.AddParameter("P2G", this.bufferParameter);
             this.dispather.AddParameter("P2G", this.mpmParameter);
+            this.dispather.AddParameter("P2G", this.soaBuffer);
 
             this.dispather.AddParameter("UpdateGrid", this.parameter);
             this.dispather.AddParameter("UpdateGrid", this.bufferParameter);
             this.dispather.AddParameter("UpdateGrid", this.mpmParameter);
+            this.dispather.AddParameter("UpdateGrid", this.soaBuffer);
 
             this.dispather.AddParameter("G2P", this.parameter);
             this.dispather.AddParameter("G2P", this.bufferParameter);
             this.dispather.AddParameter("G2P", this.mpmParameter);
+            this.dispather.AddParameter("G2P", this.soaBuffer);
 
             this.dispather.AddParameter("InitGrid", this.mpmParameter);
 
 
             this.dispather.AddParameter("AddParticles", this.mpmParameter);
             this.dispather.AddParameter("AddParticles", this.bufferParameter);
+            this.dispather.AddParameter("AddParticles", this.soaBuffer);
 
             this.dispather.AddParameter("CalGridDensity", this.parameter);
             this.dispather.AddParameter("CalGridDensity", this.bufferParameter);
             this.dispather.AddParameter("CalGridDensity", this.mpmParameter);
+            this.dispather.AddParameter("CalGridDensity", this.soaBuffer);
 
             this.dispather.AddParameter("UpdateParticleVolume", this.parameter);
             this.dispather.AddParameter("UpdateParticleVolume", this.bufferParameter);
             this.dispather.AddParameter("UpdateParticleVolume", this.mpmParameter);
+            this.dispather.AddParameter("UpdateParticleVolume", this.soaBuffer);
 
 
             this.ResizeBuffer(this.parameter.numberOfParticles.Value);
@@ -171,10 +193,13 @@ namespace UnityMPM
         {
             base.OnDisable();
             this.mpmParameter.ReleaseBuffer();
+            this.soaBuffer.ReleaseBuffer();
         }
 
         protected override void OnResetParticlesData()
         {
+
+            this.InitSOABuffer();
 
             var size = new int3(this.mpmParameter.dimx, this.mpmParameter.dimy, this.mpmParameter.dimz);
             var spacing = new float3(this.mpmParameter.h, this.mpmParameter.h, this.mpmParameter.h);
@@ -269,7 +294,25 @@ namespace UnityMPM
             }
         }
 
+        protected void InitSOABuffer()
+        {
+            var psize = this.bufferParameter.CurrentBufferLength;
+            this.soaBuffer.type.Value = new ComputeBuffer(psize, Marshal.SizeOf<int>());
+            this.soaBuffer.mass.Value = new ComputeBuffer(psize, Marshal.SizeOf<float>());
+            this.soaBuffer.volume.Value = new ComputeBuffer(psize, Marshal.SizeOf<float>());
+            this.soaBuffer.pos.Value = new ComputeBuffer(psize, Marshal.SizeOf<float3>());
+            this.soaBuffer.vel.Value = new ComputeBuffer(psize, Marshal.SizeOf<float3>());
+            this.soaBuffer.c.Value = new ComputeBuffer(psize, Marshal.SizeOf<float3x3>());
+            this.soaBuffer.f.Value = new ComputeBuffer(psize, Marshal.SizeOf<float3x3>());
+            this.soaBuffer.jp.Value = new ComputeBuffer(psize, Marshal.SizeOf<float>());
+        }
 
+        protected override void OnSetRenderMaterial(Material m)
+        {
+            m.SetBuffer("_pos", this.soaBuffer.pos.Value);
+            m.SetBuffer("_type", this.soaBuffer.type.Value);
+
+        }
         private Dictionary<Particle.Type, float> spacingMap = new Dictionary<Particle.Type, float>()
         {
             {Particle.Type.Elastic, 0.5f},
