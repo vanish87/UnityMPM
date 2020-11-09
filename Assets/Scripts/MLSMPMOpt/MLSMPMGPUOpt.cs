@@ -221,7 +221,7 @@ namespace UnityMPM
         {
             this.CheckInput();
 
-            var c = 0; while (c++ < 24)
+            var c = 0; while (c++ < 32)
             {
                 var gsize = this.grid.DataLength;
                 var psize = this.bufferParameter.CurrentBufferLength;
@@ -264,6 +264,7 @@ namespace UnityMPM
                 var c = Camera.main;
                 c.orthographic = true;
                 c.orthographicSize = this.grid.Bounds.extents.x;
+                c.aspect = this.grid.Bounds.extents.x / this.grid.Bounds.extents.y;
                 c.transform.position = this.grid.Bounds.center - new Vector3(0, 0, 10f);
             }
         }

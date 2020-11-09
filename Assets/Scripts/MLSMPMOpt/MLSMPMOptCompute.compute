@@ -20,7 +20,7 @@
 #include "Assets/Scripts/Common/SVD.hlsl"
 
 #define GTHREAD_SIZE 64
-#define PTHREAD_SIZE 512
+#define PTHREAD_SIZE 256
 #define GRID_SHARED_GROUP_SIZE 256
 
 cbuffer cb
@@ -76,7 +76,7 @@ void AddParticles(uint3 DTid : SV_DispatchThreadID)
 
 	ParticleData p = _ParticlesDataBufferRead[idx];
 	p.type = _ParticleType;
-	p.mass = 1;
+	p.mass = _ParticleType == 1?0.1f:1;
 	p.volume = 1;
 	p.position = _CPUNewParticles[newpid];
 	p.velocity = float3(0, 0, 0);
@@ -260,6 +260,9 @@ void UpdateGrid(uint3 DTid : SV_DispatchThreadID)
         if (cidx.x < 2 || cidx.x >= _DimX - 2) c.vel.x = 0;
         if (cidx.y < 2 || cidx.y >= _DimY - 2) c.vel.y = 0;
         if (cidx.z < 2 || cidx.z >= _DimZ - 2) c.vel.z = 0;
+
+
+        // if (cidx.y == _DimY/2 && cidx.x < _DimX / 2) c.vel.y = 0;
     }
     
 
