@@ -44,9 +44,9 @@
 	v2g vert(uint id : SV_VertexID) // SV_VertexID:
 	{
 		float4 c = 1;
-		// if(_ParticleBuffer[id].type == 1) c = float4(1,0,0,1);
-		// else if(_ParticleBuffer[id].type == 2) c = 1;
-		// else c = float4(0.19,0.37,0.8,1);
+		if(_type[id] == 1) c = float4(1,0,0,1);
+		else if(_type[id]== 2) c = 1;
+		else c = float4(0.19,0.37,0.8,1);
 		v2g o = (v2g)0;
 		o.position = _pos[id];
 		o.color = c;
