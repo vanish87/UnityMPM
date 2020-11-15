@@ -253,7 +253,7 @@ namespace UnityMPM
                 var psize = this.bufferParameter.CurrentBufferLength;
                 // this.dispather.Dispatch("InitGrid", gsize);
                 this.dispather.Dispatch("P2G", gsize);
-                this.dispather.Dispatch("UpdateGrid", gsize);
+                // this.dispather.Dispatch("UpdateGrid", gsize);
                 this.dispather.Dispatch("G2P", psize);
 
                 // ComputeShaderParameterBuffer.SwapBuffer(this.bufferParameter.particlesDataBufferRead, this.bufferParameter.particlesDataBufferWrite);

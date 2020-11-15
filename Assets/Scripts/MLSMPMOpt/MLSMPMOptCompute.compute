@@ -214,6 +214,28 @@ void P2G (uint3 DTid : SV_DispatchThreadID, uint GI : SV_GroupIndex)
 	c.mass = mass;
 	c.mv = mv;
 
+
+    if (c.mass <= 0)
+    {
+		c.force = 0;
+        c.mass = 0;
+        c.mv = 0;
+        c.vel = 0;
+    }
+    else
+    {
+        c.vel = c.mv / c.mass;
+
+        float3 g = float3(0.0f,-9.8f, 0.0f);
+        c.vel += _DT * (c.force / c.mass + g);
+        if (cidx.x < 2 || cidx.x >= _DimX - 2) c.vel.x = 0;
+        if (cidx.y < 2 || cidx.y >= _DimY - 2) c.vel.y = 0;
+        if (cidx.z < 2 || cidx.z >= _DimZ - 2) c.vel.z = 0;
+
+
+        // if (cidx.y == _DimY/2 && cidx.x < _DimX / 2) c.vel.y = 0;
+    }
+
 	_Grid[CellID] = c;
 
 }
@@ -291,31 +313,7 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 
     float3x3 F = _pf[pid];//mul(mul(p.U, ToIdentity(p.D)), transpose(p.V));
     F = mul(Identity3x3 + _DT * _pc[pid], F);
-	if(_ptype[pid] == 2)
-	{
-		float3x3 U;
-		float3 D;
-		float3x3 V;
-
-		GetSVD3D(F, U, D, V);
-		
-		float dl = 1.0f - 2.5e-2f;
-		float du = 1.0f + 4.5e-3f;
-		D = clamp(D, float3(dl,dl,dl), float3(du,du,du));
-		D.z = Is2D()?0:D.z;
 	
-		float oldj = determinant(F);
-		F = mul(mul(U, ToIdentity(D)),transpose(V));
-		_pjp[pid] = clamp(_pjp[pid] * oldj / determinant(F), 0.8f, 10.0f);
-	}
-	if(_ptype[pid] == 3)
-	{
-		_pjp[pid] *= 1 + _DT * (_pc[pid][0][0] + _pc[pid][1][1]);
-	}
-	_pf[pid] = F;
-
-
-
 
 		float3x3 U;
 		float3 D;
@@ -340,6 +338,15 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 
 		if(_ptype[pid] == 2)
 		{
+			float dl = 1.0f - 2.5e-2f;
+			float du = 1.0f + 4.5e-3f;
+			D = clamp(D, float3(dl,dl,dl), float3(du,du,du));
+			D.z = Is2D()?0:D.z;
+		
+			float oldj = determinant(F);
+			F = mul(mul(U, ToIdentity(D)),transpose(V));
+			_pjp[pid] = clamp(_pjp[pid] * oldj / determinant(F), 0.8f, 10.0f);
+			
 			e = exp(_hardening * (1 - _pjp[pid]));
 		}
 		
@@ -357,6 +364,7 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 
 		if(_ptype[pid] == 3)
 		{
+		_pjp[pid] *= 1 + _DT * (_pc[pid][0][0] + _pc[pid][1][1]);
 			float s = _pjp[pid] -1;
 			stress = float3x3(s,0,0,0,s,0,0,0,s) * mu * 10;
 		}
@@ -365,6 +373,7 @@ void G2P(uint3 DTid : SV_DispatchThreadID)
 		float3x3 apic = stress + _ppos[pid].w * _pc[pid];
 
 		_papic[pid] = apic;
+	_pf[pid] = F;
 
 	// float3x3 U = 0;
 	// float3 D = 0;
